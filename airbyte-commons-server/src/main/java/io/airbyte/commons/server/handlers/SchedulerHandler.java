@@ -516,6 +516,17 @@ public class SchedulerHandler {
                 List.of(email),
                 isBreakingChange);
           }
+          // case API -> {
+          // ApiNotificationClient slackNotificationClient = new
+          // ApiNotificationClient(item.getSlackConfiguration());
+          // slackNotificationClient.notifySchemaPropagated(
+          // connectionId,
+          // source.getName(),
+          // result.changeDescription(),
+          // item.getSlackConfiguration().getWebhook(),
+          // List.of(email),
+          // isBreakingChange);
+          // }
           case CUSTOMERIO -> {
             CustomerioNotificationClient emailNotificationClient = new CustomerioNotificationClient();
             emailNotificationClient.notifySchemaPropagated(

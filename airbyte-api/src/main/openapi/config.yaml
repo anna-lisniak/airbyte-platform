@@ -4341,6 +4341,7 @@ components:
       enum:
         - slack
         - customerio
+        - api
         # - webhook
     NotificationTrigger:
       type: string
@@ -8558,6 +8559,14 @@ components:
           $ref: "#/components/schemas/SlackNotificationConfiguration"
         notificationTrigger:
           $ref: "#/components/schemas/NotificationTrigger"
+        notificationType:
+          $ref: "#/components/schemas/NotificationType"
+    #          type: string
+    #          default: api
+    #          enum:
+    #            - slack
+    #            - customerio
+    #            - api
     RetryStateRead:
       type: object
       required:

@@ -316,4 +316,9 @@ public class CustomerioNotificationClient extends NotificationClient {
     return date.format(formatter);
   }
 
+  @Override
+  public boolean notifyTest(String message) {
+    return false;
+  }
+
 }

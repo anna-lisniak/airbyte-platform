@@ -15,3 +15,5 @@ properties:
     "$ref": SlackNotificationConfiguration.yaml
   customerioConfiguration:
     "$ref": CustomerioNotificationConfiguration.yaml
+  apiConfiguration:
+    "$ref": ApiNotificationConfiguration.yaml

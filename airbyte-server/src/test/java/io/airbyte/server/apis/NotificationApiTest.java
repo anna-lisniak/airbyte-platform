@@ -24,7 +24,9 @@ class NotificationApiTest extends BaseControllerTest {
 
   @Test
   void testTryWebhookApi() {
-    Mockito.when(notificationsHandler.tryNotification(Mockito.any(), Mockito.any()))
+    Mockito
+        .when(notificationsHandler.tryNotification(Mockito.any(), Mockito.any(),
+            new NotificationWebhookConfigValidationRequestBody().getNotificationType()))
         .thenReturn(new NotificationRead().status(NotificationRead.StatusEnum.SUCCEEDED));
     final String path = "/api/v1/notifications/try_webhook";
     testEndpointStatus(

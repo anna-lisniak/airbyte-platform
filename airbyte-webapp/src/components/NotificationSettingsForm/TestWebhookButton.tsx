@@ -7,15 +7,21 @@ import { useTryNotificationWebhook } from "core/api";
 import { NotificationReadStatus, NotificationSettings } from "core/request/AirbyteClient";
 import { useNotificationService } from "hooks/services/Notification";
 
-import { notificationTriggerMap } from "./NotificationSettingsForm";
+import { notificationTriggerMap, NotificationType } from "./NotificationSettingsForm";
 
 interface TestWebhookButtonProps {
   webhookUrl: string;
   disabled: boolean;
   notificationTrigger: keyof NotificationSettings;
+  type: NotificationType;
 }
 
-export const TestWebhookButton: React.FC<TestWebhookButtonProps> = ({ webhookUrl, disabled, notificationTrigger }) => {
+export const TestWebhookButton: React.FC<TestWebhookButtonProps> = ({
+  webhookUrl,
+  disabled,
+  notificationTrigger,
+  type,
+}) => {
   const [isLoading, setIsLoading] = useState(false);
   const { registerNotification, unregisterAllNotifications } = useNotificationService();
   const testWebhook = useTryNotificationWebhook();
@@ -27,6 +33,7 @@ export const TestWebhookButton: React.FC<TestWebhookButtonProps> = ({ webhookUrl
     const notificationTest = await testWebhook({
       notificationTrigger: notificationTriggerMap[notificationTrigger],
       slackConfiguration: { webhook: webhookUrl },
+      notificationType: type,
     }).catch(() => {
       return { status: NotificationReadStatus.failed };
     });

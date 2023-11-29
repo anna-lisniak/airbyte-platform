@@ -138,6 +138,9 @@ export const NotificationSettingsForm: React.FC = () => {
           <Text align="center" color="grey">
             <FormattedMessage id="settings.notifications.webhook" />
           </Text>
+          <Text align="center" color="grey">
+            <FormattedMessage id="settings.notifications.slackOrRegularApi" />
+          </Text>
           <Text color="grey">
             <FormattedMessage id="settings.notifications.webhookUrl" />
           </Text>
@@ -173,10 +176,16 @@ export const NotificationSettingsForm: React.FC = () => {
   );
 };
 
+export enum NotificationType {
+  API = "api",
+  SLACK = "slack",
+}
+
 export interface NotificationItemFieldValue {
   slack: boolean;
   customerio: boolean;
   slackWebhookLink?: string;
+  type: NotificationType;
 }
 
 export interface NotificationSettingsFormValues {
@@ -197,6 +206,10 @@ const notificationItemSchema: SchemaOf<NotificationItemFieldValue> = yup.object(
     is: true,
     then: yup.string().required("form.empty.error"),
   }),
+  type: yup
+    .mixed<NotificationType>()
+    .oneOf([NotificationType.API, NotificationType.SLACK])
+    .default(NotificationType.SLACK),
 });
 
 const validationSchema: SchemaOf<NotificationSettingsFormValues> = yup.object({

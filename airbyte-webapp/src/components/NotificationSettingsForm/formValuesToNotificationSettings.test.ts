@@ -1,12 +1,17 @@
 import { NotificationItem, NotificationSettings } from "core/request/AirbyteClient";
 
 import { formValuesToNotificationSettings } from "./formValuesToNotificationSettings";
-import { NotificationItemFieldValue, NotificationSettingsFormValues } from "./NotificationSettingsForm";
+import {
+  NotificationItemFieldValue,
+  NotificationSettingsFormValues,
+  NotificationType,
+} from "./NotificationSettingsForm";
 
 const mockNotificationItemFieldValue: NotificationItemFieldValue = {
   slack: false,
   customerio: false,
   slackWebhookLink: "",
+  type: NotificationType.SLACK,
 };
 
 const mockNotificationItem: NotificationItem = {
@@ -61,7 +66,12 @@ describe("formValuesToNotificationSettings", () => {
     const formValues: NotificationSettingsFormValues = {
       ...mockEmptyFormValues,
       sendOnFailure: { ...mockNotificationItemFieldValue, slack: true, slackWebhookLink: "www.airbyte.com" },
-      sendOnSuccess: { customerio: true, slack: true, slackWebhookLink: "www.airbyte.io" },
+      sendOnSuccess: {
+        customerio: true,
+        slack: true,
+        slackWebhookLink: "www.airbyte.io",
+        type: NotificationType.SLACK,
+      },
     };
 
     const expectedNotificationSEttings: NotificationSettings = {

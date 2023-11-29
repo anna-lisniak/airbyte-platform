@@ -90,4 +90,6 @@ public abstract class NotificationClient {
     return String.format(template, data);
   }
 
+  public abstract boolean notifyTest(String message) throws IOException, InterruptedException;
+
 }

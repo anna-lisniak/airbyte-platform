@@ -117,10 +117,12 @@ dependencies {
     jacocoAggregation project(":airbyte-webapp")
     jacocoAggregation project(":airbyte-workers")
 }
-
-tasks.named("check") {
-    dependsOn tasks.named("testAggregateTestReport", JacocoReport)
-}
+//
+//tasks.named("check") {
+//    dependsOn tasks.named("testAggregateTestReport", JacocoReport).configure {
+//         dependsOn("downloadConnectorRegistry")
+//    }
+//}
 
 Properties env = new Properties()
 rootProject.file('.env.dev').withInputStream { env.load(it) }

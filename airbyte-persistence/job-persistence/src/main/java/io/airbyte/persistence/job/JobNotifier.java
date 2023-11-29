@@ -25,6 +25,7 @@ import io.airbyte.config.persistence.ConfigRepository;
 import io.airbyte.metrics.lib.MetricAttribute;
 import io.airbyte.metrics.lib.MetricClientFactory;
 import io.airbyte.metrics.lib.OssMetricsRegistry;
+import io.airbyte.notification.ApiNotificationClient;
 import io.airbyte.notification.CustomerioNotificationClient;
 import io.airbyte.notification.NotificationClient;
 import io.airbyte.notification.SlackNotificationClient;
@@ -125,6 +126,8 @@ public class JobNotifier {
         return new SlackNotificationClient(item.getSlackConfiguration());
       } else if (NotificationType.CUSTOMERIO.equals(notificationType)) {
         return new CustomerioNotificationClient();
+      } else if (NotificationType.API.equals(notificationType)) {
+        return new ApiNotificationClient(item.getApiConfiguration());
       } else {
         throw new IllegalArgumentException("Notification type not supported: " + notificationType);
       }
