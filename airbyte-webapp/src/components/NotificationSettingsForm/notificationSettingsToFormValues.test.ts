@@ -1,17 +1,13 @@
 import { NotificationItem, NotificationSettings } from "core/request/AirbyteClient";
 
-import {
-  NotificationItemFieldValue,
-  NotificationSettingsFormValues,
-  NotificationType,
-} from "./NotificationSettingsForm";
+import { NotificationItemFieldValue, NotificationSettingsFormValues } from "./NotificationSettingsForm";
 import { notificationSettingsToFormValues } from "./notificationSettingsToFormValues";
 
 const mockNotificationItemFieldValue: NotificationItemFieldValue = {
   slack: false,
   customerio: false,
   slackWebhookLink: "",
-  type: NotificationType.SLACK,
+  api: false,
 };
 
 const mockNotificationItem: NotificationItem = {

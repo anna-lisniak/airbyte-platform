@@ -1,6 +1,6 @@
 import { NotificationItem, NotificationSettings } from "core/request/AirbyteClient";
 
-import { NotificationSettingsFormValues, notificationKeys } from "./NotificationSettingsForm";
+import { notificationKeys, NotificationSettingsFormValues } from "./NotificationSettingsForm";
 
 export function formValuesToNotificationSettings(formValues: NotificationSettingsFormValues): NotificationSettings {
   const notificationSettings: NotificationSettings = {};
@@ -13,6 +13,9 @@ export function formValuesToNotificationSettings(formValues: NotificationSetting
     }
     if (valueFromForm.slack) {
       notificationItem.notificationType?.push("slack");
+    }
+    if (valueFromForm.api) {
+      notificationItem.notificationType?.push("api");
     }
     if (valueFromForm.slackWebhookLink) {
       notificationItem.slackConfiguration = {

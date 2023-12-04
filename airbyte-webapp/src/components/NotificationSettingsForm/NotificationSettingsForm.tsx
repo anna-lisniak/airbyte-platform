@@ -66,6 +66,7 @@ export const NotificationSettingsForm: React.FC = () => {
           const webhookValidation = await testWebhook({
             notificationTrigger: notificationTriggerMap[key],
             slackConfiguration: { webhook: notification.slackWebhookLink },
+            notificationType: notification.api ? NotificationType.API : NotificationType.SLACK,
           }).catch(() => ({ status: NotificationReadStatus.failed }));
           return webhookValidation.status === NotificationReadStatus.succeeded
             ? { key, isValid: true }
@@ -184,8 +185,8 @@ export enum NotificationType {
 export interface NotificationItemFieldValue {
   slack: boolean;
   customerio: boolean;
+  api: boolean;
   slackWebhookLink?: string;
-  type: NotificationType;
 }
 
 export interface NotificationSettingsFormValues {
@@ -202,14 +203,11 @@ export interface NotificationSettingsFormValues {
 const notificationItemSchema: SchemaOf<NotificationItemFieldValue> = yup.object({
   slack: yup.boolean().required(),
   customerio: yup.boolean().required(),
+  api: yup.boolean().required(),
   slackWebhookLink: yup.string().when("slack", {
     is: true,
     then: yup.string().required("form.empty.error"),
   }),
-  type: yup
-    .mixed<NotificationType>()
-    .oneOf([NotificationType.API, NotificationType.SLACK])
-    .default(NotificationType.SLACK),
 });
 
 const validationSchema: SchemaOf<NotificationSettingsFormValues> = yup.object({

@@ -1,17 +1,17 @@
-import { useFormContext, useWatch } from "react-hook-form";
-import { FormattedMessage } from "react-intl";
+import {useFormContext, useWatch} from "react-hook-form";
+import {FormattedMessage} from "react-intl";
 
-import { FlexContainer } from "components/ui/Flex";
-import { Switch } from "components/ui/Switch";
-import { Text } from "components/ui/Text";
-import { Tooltip } from "components/ui/Tooltip";
+import {FlexContainer} from "components/ui/Flex";
+import {Switch} from "components/ui/Switch";
+import {Text} from "components/ui/Text";
+import {Tooltip} from "components/ui/Tooltip";
 
-import { FeatureItem, useFeature } from "core/services/features";
+import {FeatureItem, useFeature} from "core/services/features";
 
 import styles from "./NotificationItemField.module.scss";
-import { NotificationSettingsFormValues, NotificationType } from "./NotificationSettingsForm";
-import { SlackNotificationUrlInput } from "./SlackNotificationUrlInput";
-import { TestWebhookButton } from "./TestWebhookButton";
+import {NotificationSettingsFormValues, NotificationType} from "./NotificationSettingsForm";
+import {SlackNotificationUrlInput} from "./SlackNotificationUrlInput";
+import {TestWebhookButton} from "./TestWebhookButton";
 
 interface NotificationItemFieldProps {
   emailNotificationRequired?: boolean;
@@ -25,7 +25,7 @@ export const NotificationItemField: React.FC<NotificationItemFieldProps> = ({
   name,
 }) => {
   const emailNotificationsFeature = useFeature(FeatureItem.EmailNotifications);
-  const atLeastOneNotificationTypeEnableable = emailNotificationsFeature || !slackNotificationUnsupported;
+  const atLeastOneNotificationTypeEnable = emailNotificationsFeature || !slackNotificationUnsupported;
   const { setValue, trigger } = useFormContext<NotificationSettingsFormValues>();
   const field = useWatch<NotificationSettingsFormValues, keyof NotificationSettingsFormValues>({ name });
 
@@ -44,19 +44,10 @@ export const NotificationItemField: React.FC<NotificationItemFieldProps> = ({
   };
 
   const onToggleNotificationType = () => {
-    setValue(`${name}.type`, field.type === NotificationType.API ? NotificationType.SLACK : NotificationType.API, {
-      shouldTouch: true,
-      shouldDirty: true,
-    });
-
-    // If disabling the webhook notification, the input will be disabled, so we need to
-    // manually trigger validation to clear any potential validation errors being shown
-    if (field.slack) {
-      trigger(`${name}.slackWebhookLink`);
-    }
+    setValue(`${name}.api`, !field.api, { shouldTouch: true, shouldDirty: true });
   };
 
-  if (!atLeastOneNotificationTypeEnableable) {
+  if (!atLeastOneNotificationTypeEnable) {
     return null;
   }
 
@@ -92,18 +83,14 @@ export const NotificationItemField: React.FC<NotificationItemFieldProps> = ({
             <Switch onChange={onToggleSlackNotification} checked={field.slack} data-testid={`${name}.slack`} />
           </FlexContainer>
           <FlexContainer justifyContent="center">
-            <Switch
-              onChange={onToggleNotificationType}
-              checked={field.type === NotificationType.API}
-              data-testid={`${name}.type`}
-            />
+            <Switch onChange={onToggleNotificationType} checked={field.api && field.slack} data-testid={`${name}.api`} />
           </FlexContainer>
           <SlackNotificationUrlInput name={`${name}.slackWebhookLink`} disabled={!field.slack} />
           <TestWebhookButton
             disabled={!field.slack}
             webhookUrl={field.slackWebhookLink ?? ""}
             notificationTrigger={name}
-            type={field.type}
+            notificationType={field.api ? NotificationType.API : NotificationType.SLACK}
           />
         </>
       )}
