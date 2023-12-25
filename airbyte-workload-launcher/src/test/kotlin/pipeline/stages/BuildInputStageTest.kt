@@ -5,47 +5,111 @@
 package io.airbyte.workload.launcher.pipeline.stages
 
 import com.fasterxml.jackson.databind.node.POJONode
-import io.airbyte.config.secrets.hydration.SecretsHydrator
+import fixtures.RecordFixtures
+import io.airbyte.config.ActorType
+import io.airbyte.config.StandardCheckConnectionInput
+import io.airbyte.config.WorkloadType
 import io.airbyte.persistence.job.models.ReplicationInput
-import io.airbyte.workload.launcher.pipeline.LaunchStageIO
-import io.airbyte.workload.launcher.pipeline.LauncherInput
+import io.airbyte.workers.CheckConnectionInputHydrator
+import io.airbyte.workers.ReplicationInputHydrator
+import io.airbyte.workers.models.CheckConnectionInput
+import io.airbyte.workers.models.ReplicationActivityInput
+import io.airbyte.workload.launcher.pipeline.stages.model.CheckPayload
+import io.airbyte.workload.launcher.pipeline.stages.model.LaunchStageIO
+import io.airbyte.workload.launcher.pipeline.stages.model.SyncPayload
 import io.airbyte.workload.launcher.serde.PayloadDeserializer
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.jupiter.api.Test
+import java.util.UUID
 
 class BuildInputStageTest {
   @Test
-  fun `parses input and hydrates`() {
-    val msgStr = "foo"
+  fun `parses sync input and hydrates`() {
+    val inputStr = "foo"
     val sourceConfig = POJONode("bar")
     val destConfig = POJONode("baz")
-    val replInput =
+    val unhydrated = ReplicationActivityInput()
+    val hydrated =
       ReplicationInput()
         .withSourceConfiguration(sourceConfig)
         .withDestinationConfiguration(destConfig)
 
-    val secretsHydrator: SecretsHydrator = mockk()
+    val checkInputHydrator: CheckConnectionInputHydrator = mockk()
+    val replicationInputHydrator: ReplicationInputHydrator = mockk()
     val deserializer: PayloadDeserializer = mockk()
-    every { deserializer.toReplicationInput(msgStr) } returns replInput
-    every { secretsHydrator.hydrate(any()) } returns POJONode("")
+    every { deserializer.toReplicationActivityInput(inputStr) } returns unhydrated
+    every { replicationInputHydrator.getHydratedReplicationInput(unhydrated) } returns hydrated
 
     val stage =
       BuildInputStage(
-        secretsHydrator,
+        checkInputHydrator,
+        replicationInputHydrator,
         deserializer,
+        mockk(),
       )
-    val io = LaunchStageIO(msg = LauncherInput("1", msgStr))
+    val io = LaunchStageIO(msg = RecordFixtures.launcherInput(workloadInput = inputStr, workloadType = WorkloadType.SYNC))
 
     val result = stage.applyStage(io)
 
     verify {
-      deserializer.toReplicationInput(msgStr)
-      secretsHydrator.hydrate(sourceConfig)
-      secretsHydrator.hydrate(destConfig)
+      deserializer.toReplicationActivityInput(inputStr)
+      replicationInputHydrator.getHydratedReplicationInput(unhydrated)
     }
 
-    assert(result.replicationInput == replInput)
+    when (val payload = result.payload) {
+      is SyncPayload -> assert(hydrated == payload.input)
+      else -> "Incorrect payload type: ${payload?.javaClass?.name}"
+    }
+  }
+
+  @Test
+  fun `parses check input and hydrates`() {
+    val inputStr = "foo"
+    val checkInput = CheckConnectionInput()
+    val unhydratedConfig =
+      StandardCheckConnectionInput()
+        .withActorId(UUID.randomUUID())
+        .withAdditionalProperty("whatever", "random value")
+        .withActorType(ActorType.DESTINATION)
+    val unhydrated =
+      checkInput.apply {
+        connectionConfiguration = unhydratedConfig
+      }
+
+    val hydratedConfig =
+      StandardCheckConnectionInput()
+        .withActorId(UUID.randomUUID())
+        .withAdditionalProperty("whatever", "random value")
+        .withActorType(ActorType.DESTINATION)
+        .withConnectionConfiguration(POJONode("bar"))
+
+    val checkInputHydrator: CheckConnectionInputHydrator = mockk()
+    val replicationInputHydrator: ReplicationInputHydrator = mockk()
+    val deserializer: PayloadDeserializer = mockk()
+    every { deserializer.toCheckConnectionInput(inputStr) } returns unhydrated
+    every { checkInputHydrator.getHydratedStandardCheckInput(unhydratedConfig) } returns hydratedConfig
+
+    val stage =
+      BuildInputStage(
+        checkInputHydrator,
+        replicationInputHydrator,
+        deserializer,
+        mockk(),
+      )
+    val io = LaunchStageIO(msg = RecordFixtures.launcherInput(workloadInput = inputStr, workloadType = WorkloadType.CHECK))
+
+    val result = stage.applyStage(io)
+
+    verify {
+      deserializer.toCheckConnectionInput(inputStr)
+      checkInputHydrator.getHydratedStandardCheckInput(unhydratedConfig)
+    }
+
+    when (val payload = result.payload) {
+      is CheckPayload -> assert(hydratedConfig == payload.input.connectionConfiguration)
+      else -> "Incorrect payload type: ${payload?.javaClass?.name}"
+    }
   }
 }

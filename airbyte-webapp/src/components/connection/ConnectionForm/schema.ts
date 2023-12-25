@@ -3,8 +3,8 @@ import { SchemaOf } from "yup";
 
 import { NormalizationType } from "area/connection/types";
 import { validateCronExpression, validateCronFrequencyOneHourOrMore } from "area/connection/utils";
-import { AirbyteStreamAndConfiguration } from "core/api/types/AirbyteClient";
 import {
+  AirbyteStreamAndConfiguration,
   AirbyteStream,
   AirbyteStreamConfiguration,
   ConnectionScheduleData,
@@ -14,11 +14,10 @@ import {
   NamespaceDefinitionType,
   NonBreakingChangesPreference,
   SyncMode,
-} from "core/request/AirbyteClient";
+} from "core/api/types/AirbyteClient";
+import { ConnectionFormMode } from "hooks/services/ConnectionForm/ConnectionFormService";
 
-import { dbtOperationReadOrCreateSchema } from "../TransformationHookForm";
-
-export type ConnectionHookFormMode = "create" | "edit" | "readonly";
+import { dbtOperationReadOrCreateSchema } from "../TransformationForm";
 
 /**
  * yup schema for the schedule data
@@ -184,7 +183,7 @@ export const namespaceFormatSchema = yup.string().when("namespaceDefinition", {
  * generate yup schema for the create connection form
  */
 export const createConnectionValidationSchema = (
-  mode: ConnectionHookFormMode,
+  mode: ConnectionFormMode,
   allowSubOneHourCronExpressions: boolean,
   allowAutoDetectSchema: boolean
 ) =>

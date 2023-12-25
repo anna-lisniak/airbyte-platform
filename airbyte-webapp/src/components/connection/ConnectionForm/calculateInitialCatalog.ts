@@ -1,22 +1,34 @@
 import isEqual from "lodash/isEqual";
 
-import { SyncSchema, SyncSchemaStream } from "core/domain/catalog";
 import {
   DestinationSyncMode,
   SyncMode,
   AirbyteStreamConfiguration,
   StreamDescriptor,
   StreamTransform,
-} from "core/request/AirbyteClient";
+  AirbyteCatalog,
+  AirbyteStreamAndConfiguration,
+  CatalogDiff,
+  SchemaChange,
+} from "core/api/types/AirbyteClient";
 
-const getDefaultCursorField = (streamNode: SyncSchemaStream): string[] => {
+import { isSameSyncStream } from "./utils";
+
+/**
+ * Will be removed soon, there is no need to get default cursor field, we get it from the backend
+ * @deprecated
+ */
+const getDefaultCursorField = (streamNode: AirbyteStreamAndConfiguration): string[] => {
   if (streamNode.stream?.defaultCursorField?.length) {
     return streamNode.stream.defaultCursorField;
   }
   return streamNode.config?.cursorField || [];
 };
 
-const clearBreakingFieldChanges = (nodeStream: SyncSchemaStream, breakingChangesByStream: StreamTransform[]) => {
+const clearBreakingFieldChanges = (
+  nodeStream: AirbyteStreamAndConfiguration,
+  breakingChangesByStream: StreamTransform[]
+) => {
   if (!breakingChangesByStream.length || !nodeStream.config) {
     return nodeStream;
   }
@@ -64,7 +76,11 @@ const clearBreakingFieldChanges = (nodeStream: SyncSchemaStream, breakingChanges
   return nodeStream;
 };
 
-const verifySourceDefinedProperties = (streamNode: SyncSchemaStream, isEditMode: boolean) => {
+/**
+ * Will be removed soon, there is no need
+ * @deprecated
+ */
+const verifySourceDefinedProperties = (streamNode: AirbyteStreamAndConfiguration, isEditMode: boolean) => {
   if (!streamNode.stream || !streamNode.config || !isEditMode) {
     return streamNode;
   }
@@ -89,7 +105,11 @@ const verifySourceDefinedProperties = (streamNode: SyncSchemaStream, isEditMode:
   return streamNode;
 };
 
-const verifySupportedSyncModes = (streamNode: SyncSchemaStream): SyncSchemaStream => {
+/**
+ * Will be removed soon, there is no need to verify supported sync modes, we get it from the backend
+ * @deprecated
+ */
+const verifySupportedSyncModes = (streamNode: AirbyteStreamAndConfiguration): AirbyteStreamAndConfiguration => {
   if (!streamNode.stream) {
     return streamNode;
   }
@@ -103,7 +123,11 @@ const verifySupportedSyncModes = (streamNode: SyncSchemaStream): SyncSchemaStrea
   return { ...streamNode, stream: { ...streamNode.stream, supportedSyncModes: [SyncMode.full_refresh] } };
 };
 
-const verifyConfigCursorField = (streamNode: SyncSchemaStream): SyncSchemaStream => {
+/**
+ * Will be removed soon, there is no need to verify cursor field, we get it from the backend
+ * @deprecated
+ */
+const verifyConfigCursorField = (streamNode: AirbyteStreamAndConfiguration): AirbyteStreamAndConfiguration => {
   if (!streamNode.config) {
     return streamNode;
   }
@@ -118,13 +142,17 @@ const verifyConfigCursorField = (streamNode: SyncSchemaStream): SyncSchemaStream
   };
 };
 
+/**
+ * Will be removed soon, there is no need to get optimal sync mode, we get it from the backend
+ * @deprecated
+ */
 const getOptimalSyncMode = (
-  streamNode: SyncSchemaStream,
+  streamNode: AirbyteStreamAndConfiguration,
   supportedDestinationSyncModes: DestinationSyncMode[]
-): SyncSchemaStream => {
+): AirbyteStreamAndConfiguration => {
   const updateStreamConfig = (
     config: Pick<AirbyteStreamConfiguration, "syncMode" | "destinationSyncMode">
-  ): SyncSchemaStream => ({
+  ): AirbyteStreamAndConfiguration => ({
     ...streamNode,
     config: { ...streamNode.config, ...config },
   });
@@ -174,20 +202,19 @@ const getOptimalSyncMode = (
 };
 
 /**
- * @deprecated will be removed during clean up -  https://github.com/airbytehq/airbyte-platform-internal/issues/8639
- * @see calculateInitialCatalogHookForm.ts
+ * will be removed soon, but part of functionality is extracted to analyzeSyncCatalogBreakingChanges
+ * @deprecated
  */
-const calculateInitialCatalog = (
-  schema: SyncSchema,
+export const calculateInitialCatalog = (
+  schema: AirbyteCatalog,
   supportedDestinationSyncModes: DestinationSyncMode[],
   streamsWithBreakingFieldChanges?: StreamTransform[],
   isNotCreateMode?: boolean,
   newStreamDescriptors?: StreamDescriptor[]
-): SyncSchema => {
+): AirbyteCatalog => {
   return {
-    streams: schema.streams.map<SyncSchemaStream>((apiNode, id) => {
-      const nodeWithId: SyncSchemaStream = { ...apiNode, id: id.toString() };
-      const nodeStream = verifySourceDefinedProperties(verifySupportedSyncModes(nodeWithId), isNotCreateMode || false);
+    streams: schema.streams.map<AirbyteStreamAndConfiguration>((apiNode) => {
+      const nodeStream = verifySourceDefinedProperties(verifySupportedSyncModes(apiNode), isNotCreateMode || false);
 
       // if the stream is new since a refresh, verify cursor and get optimal sync modes
       const isStreamNew = newStreamDescriptors?.some(
@@ -217,4 +244,45 @@ const calculateInitialCatalog = (
   };
 };
 
-export default calculateInitialCatalog;
+/**
+ * Analyzes the sync catalog for breaking changes and applies necessary transformations.
+ * If there are no schema changes or non-breaking changes, and CatalogDiff is undefined, returns the sync catalog unchanged.
+ * Otherwise, collects all streams with breaking changes and applies transformations.
+ *
+ * @param {AirbyteCatalog} syncCatalog - The sync catalog to analyze.
+ * @param {CatalogDiff} catalogDiff - The catalog difference.
+ * @param {SchemaChange} schemaChange - The schema change type.
+ * @returns {AirbyteCatalog} - The modified sync catalog with necessary transformations applied.
+ */
+export const analyzeSyncCatalogBreakingChanges = (
+  syncCatalog: AirbyteCatalog,
+  catalogDiff: CatalogDiff | undefined,
+  schemaChange: SchemaChange | undefined
+): AirbyteCatalog => {
+  //  if there are no schema changes or schema change is non-breaking, and CatalogDiff is undefined, return syncCatalog
+  if ((SchemaChange.no_change === schemaChange || SchemaChange.non_breaking === schemaChange) && !catalogDiff) {
+    return syncCatalog;
+  }
+
+  // otherwise, we assume that there is a breaking change and we need to collect all streams with breaking changes
+  const streamTransformsWithBreakingChange =
+    catalogDiff?.transforms.filter(
+      (streamTransform) =>
+        streamTransform.transformType === "update_stream" &&
+        streamTransform.updateStream?.filter((fieldTransform) => fieldTransform.breaking)
+    ) || [];
+
+  return {
+    streams: syncCatalog.streams.map<AirbyteStreamAndConfiguration>((nodeStream) => {
+      const breakingChangesByStream = streamTransformsWithBreakingChange.filter(({ streamDescriptor }) =>
+        isSameSyncStream(nodeStream, streamDescriptor.name, streamDescriptor.namespace)
+      );
+
+      if (!breakingChangesByStream.length) {
+        return nodeStream;
+      }
+
+      return clearBreakingFieldChanges(nodeStream, breakingChangesByStream);
+    }),
+  };
+};

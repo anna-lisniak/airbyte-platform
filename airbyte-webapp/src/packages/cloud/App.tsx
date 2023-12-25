@@ -4,11 +4,12 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { ThemeProvider } from "styled-components";
 
 import { ApiErrorBoundary } from "components/common/ApiErrorBoundary";
+import { DeployPreviewMessage } from "components/DeployPreviewMessage";
 import { DevToolsToggle } from "components/DevToolsToggle";
 import LoadingPage from "components/LoadingPage";
 
-import { ConfigServiceProvider, config } from "config";
 import { QueryProvider } from "core/api";
+import { ConfigServiceProvider, config } from "core/config";
 import { AnalyticsProvider } from "core/services/analytics";
 import { defaultCloudFeatures, FeatureService } from "core/services/features";
 import { I18nProvider } from "core/services/i18n";
@@ -66,6 +67,7 @@ const App: React.FC = () => {
                       <AppMonitoringServiceProvider>
                         <ApiErrorBoundary>
                           <Services>
+                            <DeployPreviewMessage />
                             <Routing />
                           </Services>
                         </ApiErrorBoundary>

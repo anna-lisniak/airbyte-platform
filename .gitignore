@@ -6,6 +6,7 @@ build
 out
 .DS_Store
 data
+!oss/airbyte-data/src/main/java/io/airbyte/data/*
 .dockerversions
 .classpath
 .project
@@ -22,6 +23,9 @@ secrets
 !airbyte-config/config-secrets/src/main/kotlin/secrets
 updated_configurations
 !airbyte-integrations/connector-templates/**/secrets
+
+# include airbyte-data
+!airbyte-data/src/**/data
 
 # Test logs
 acceptance_tests_logs

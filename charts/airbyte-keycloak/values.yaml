@@ -3,21 +3,19 @@
 ##  secretName Overrides the secrate name with with credentials to S3 Bucket and logging
 ##  database.secretName Name of database secret
 ##  database.secretValue Value of database password key stored in secret
-##  database.host Hostname of database
-##  database.port Database port
 global:
+  # serviceAccountName -- Service Account name override
   serviceAccountName: placeholderServiceAccount
+  # -- airbyte deployment mode
   deploymentMode: oss
   secretName: ""
   database:
     secretName: ""
     secretValue: ""
-    host: "example.com"
-    port: "5432"
   secrets: {}
   env_vars: {}
   extraContainers: []
-  ## extraSelectorLables [object] - use to specify own additional selector labels for deployment
+  ## extraSelectorLabels [object] - use to specify own additional selector labels for deployment
   extraSelectorLabels: {}
   ## extraLabels [object] - use to specify own additional labels for deployment
   extraLabels: {}
@@ -50,7 +48,7 @@ podLabels: {}
 ##
 livenessProbe:
   enabled: true
-  initialDelaySeconds: 60
+  initialDelaySeconds: 120
   periodSeconds: 5
   timeoutSeconds: 5
   failureThreshold: 3
@@ -65,7 +63,7 @@ livenessProbe:
 ##
 readinessProbe:
   enabled: true
-  initialDelaySeconds: 30
+  initialDelaySeconds: 120
   periodSeconds: 5
   timeoutSeconds: 5
   failureThreshold: 10
@@ -221,7 +219,7 @@ extraVolumes: []
 #   DATABASE_USER: airbyte
 env_vars: {}
 
-## extraSelectorLables [object] - use to specify own additional selector labels for deployment
+## extraSelectorLabels [object] - use to specify own additional selector labels for deployment
 extraSelectorLabels: {}
 ## extraLabels [object] - use to specify own additional labels for deployment
 extraLabels: {}

@@ -2,13 +2,17 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useIntl } from "react-intl";
 
 import { useNotificationService } from "hooks/services/Notification";
-import { SCOPE_USER } from "services/Scope";
 
 import { organizationKeys } from "./organizations";
 import { workspaceKeys } from "./workspaces";
-import { createPermission, listPermissionsByUser } from "../generated/AirbyteClient";
-import { deletePermission, updatePermission } from "../generated/AirbyteClient";
+import {
+  createPermission,
+  listPermissionsByUser,
+  deletePermission,
+  updatePermission,
+} from "../generated/AirbyteClient";
 import { PermissionCreate, PermissionRead, PermissionUpdate } from "../generated/AirbyteClient.schemas";
+import { SCOPE_USER } from "../scopes";
 import { useRequestOptions } from "../useRequestOptions";
 import { useSuspenseQuery } from "../useSuspenseQuery";
 
@@ -17,9 +21,17 @@ export const permissionKeys = {
   listByUser: (userId: string) => [...permissionKeys.all, "listByUser", userId] as const,
 };
 
-export const useListPermissions = (userId: string) => {
+export const getListPermissionsQueryKey = (userId: string) => {
+  return permissionKeys.listByUser(userId);
+};
+
+export const useListPermissionsQuery = (userId: string) => {
   const requestOptions = useRequestOptions();
-  return useSuspenseQuery(permissionKeys.listByUser(userId), () => listPermissionsByUser({ userId }, requestOptions));
+  return () => listPermissionsByUser({ userId }, requestOptions);
+};
+
+export const useListPermissions = (userId: string) => {
+  return useSuspenseQuery(getListPermissionsQueryKey(userId), useListPermissionsQuery(userId));
 };
 
 export const useUpdatePermissions = () => {

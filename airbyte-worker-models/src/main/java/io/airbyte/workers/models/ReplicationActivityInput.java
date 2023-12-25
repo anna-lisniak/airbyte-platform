@@ -4,10 +4,10 @@
 
 package io.airbyte.workers.models;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.airbyte.config.ConnectionContext;
 import io.airbyte.config.JobSyncConfig;
-import io.airbyte.config.StandardSyncInput;
 import io.airbyte.config.SyncResourceRequirements;
 import io.airbyte.persistence.job.models.IntegrationLauncherConfig;
 import io.airbyte.persistence.job.models.JobRunConfig;
@@ -22,16 +22,8 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ReplicationActivityInput {
-
-  // We include this so that we can use a feature flag to roll out the switch from sync input to
-  // replication input.
-  // The sync workflow has to be deterministic, so we don't want to switch based on the feature flags
-  // there. Instead,
-  // we pass the sync input so that replicateV2 can switch to replicate if indicated by a feature
-  // flag. This reduces
-  // the risk from this change. Once we're fully on replicateV2 we can remove this from the input.
-  private StandardSyncInput syncInput;
 
   // Actor ID for the source used in the sync - this is used to update the actor configuration when
   // requested.
@@ -74,5 +66,9 @@ public class ReplicationActivityInput {
   private RefreshSchemaActivityOutput schemaRefreshOutput;
   // Replication context object containing relevant IDs
   private ConnectionContext connectionContext;
+  // Whether to use workload API
+  private Boolean useWorkloadApi;
+  // Whether to use workload API
+  private Boolean useNewDocStoreApi;
 
 }

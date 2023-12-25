@@ -5,16 +5,21 @@ import io.airbyte.commons.temporal.WorkflowClientWrapped
 import io.airbyte.metrics.lib.MetricClient
 import io.temporal.activity.ActivityOptions
 import io.temporal.client.WorkflowClient
+import io.temporal.client.WorkflowOptions
 import io.temporal.testing.TestWorkflowEnvironment
 import io.temporal.worker.Worker
 import io.temporal.workflow.Workflow
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.spy
 import org.mockito.Mockito.verify
 import java.time.Duration
+import java.util.concurrent.CountDownLatch
 
 // Payload for the Queue
 @JsonDeserialize(builder = TestQueueInput.Builder::class)
@@ -28,8 +33,9 @@ data class TestQueueInput(val input: String) {
 }
 
 // The actual consumer
-class TestConsumer : MessageConsumer<TestQueueInput> {
+class TestConsumer(val latch: CountDownLatch = CountDownLatch(1)) : MessageConsumer<TestQueueInput> {
   override fun consume(input: TestQueueInput) {
+    latch.countDown()
     println(input)
   }
 }
@@ -58,6 +64,7 @@ class BasicQueueTest {
   companion object {
     val QUEUE_NAME = "testQueue"
 
+    lateinit var consumer: TestConsumer
     lateinit var activity: QueueActivityImpl<TestQueueInput>
 
     lateinit var testEnv: TestWorkflowEnvironment
@@ -72,7 +79,8 @@ class BasicQueueTest {
       worker.registerWorkflowImplementationTypes(TestWorkflowImpl::class.java)
       client = testEnv.workflowClient
 
-      activity = spy(QueueActivityImpl(TestConsumer()))
+      consumer = TestConsumer()
+      activity = spy(QueueActivityImpl(consumer))
       worker.registerActivitiesImplementations(activity)
       testEnv.start()
     }
@@ -86,10 +94,18 @@ class BasicQueueTest {
 
   @Test
   fun testRoundTrip() {
-    val producer = TemporalMessageProducer<TestQueueInput>(WorkflowClientWrapped(client, mock(MetricClient::class.java)))
-    val message = TestQueueInput("boom!")
-    producer.publish(QUEUE_NAME, message)
+    val workflowClient = spy(WorkflowClientWrapped(client, mock(MetricClient::class.java)))
+    val optionsCaptor = ArgumentCaptor.forClass(WorkflowOptions::class.java)
 
+    val producer = TemporalMessageProducer<TestQueueInput>(workflowClient)
+    val message = TestQueueInput("boom!")
+    val messageId = "myId"
+    producer.publish(QUEUE_NAME, message, messageId)
+
+    // Since publishing is async, wait on the latch
+    consumer.latch.await()
     verify(activity).consume(Message(message))
+    verify(workflowClient).newWorkflowStub<QueueWorkflow<TestQueueInput>>(any(), optionsCaptor.capture())
+    assertEquals(messageId, optionsCaptor.value.workflowId)
   }
 }

@@ -18,6 +18,9 @@ import {
   NotificationTrigger,
   NotificationWebhookConfigValidationRequestBody,
 } from "core/request/AirbyteClient";
+
+import { NotificationReadStatus, NotificationSettings, NotificationTrigger } from "core/api/types/AirbyteClient";
+
 import { FeatureItem, useFeature } from "core/services/features";
 import { isFulfilled } from "core/utils/promises";
 import { useAppMonitoringService } from "hooks/services/AppMonitoringService";

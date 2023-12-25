@@ -11,6 +11,7 @@ import io.airbyte.commons.server.handlers.ActorDefinitionVersionHandler;
 import io.airbyte.commons.server.handlers.AttemptHandler;
 import io.airbyte.commons.server.handlers.ConnectionsHandler;
 import io.airbyte.commons.server.handlers.ConnectorDefinitionSpecificationHandler;
+import io.airbyte.commons.server.handlers.DeploymentMetadataHandler;
 import io.airbyte.commons.server.handlers.DestinationDefinitionsHandler;
 import io.airbyte.commons.server.handlers.DestinationHandler;
 import io.airbyte.commons.server.handlers.HealthCheckHandler;
@@ -32,6 +33,7 @@ import io.airbyte.commons.server.handlers.WebBackendConnectionsHandler;
 import io.airbyte.commons.server.handlers.WebBackendGeographiesHandler;
 import io.airbyte.commons.server.handlers.WorkspacesHandler;
 import io.airbyte.commons.server.scheduler.SynchronousSchedulerClient;
+import io.airbyte.commons.server.validation.ActorDefinitionAccessValidator;
 import io.airbyte.commons.temporal.TemporalClient;
 import io.airbyte.db.Database;
 import io.airbyte.persistence.job.JobNotifier;
@@ -210,6 +212,14 @@ abstract class BaseControllerTest {
     return sourceDefinitionsHandler;
   }
 
+  ActorDefinitionAccessValidator actorDefinitionAccessValidator = Mockito.mock(ActorDefinitionAccessValidator.class);
+
+  @MockBean(ActorDefinitionAccessValidator.class)
+  @Replaces(ActorDefinitionAccessValidator.class)
+  ActorDefinitionAccessValidator mmActorDefinitionAccessValidator() {
+    return actorDefinitionAccessValidator;
+  }
+
   SourceHandler sourceHandler = Mockito.mock(SourceHandler.class);
 
   @MockBean(SourceHandler.class)
@@ -264,6 +274,14 @@ abstract class BaseControllerTest {
   @Replaces(OrganizationsHandler.class)
   OrganizationsHandler mmOrganizationsHandler() {
     return organizationsHandler;
+  }
+
+  DeploymentMetadataHandler deploymentMetadataHandler = Mockito.mock(DeploymentMetadataHandler.class);
+
+  @MockBean(DeploymentMetadataHandler.class)
+  @Replaces(DeploymentMetadataHandler.class)
+  DeploymentMetadataHandler mmDeploymentMetadataHandler() {
+    return deploymentMetadataHandler;
   }
 
   @MockBean(SynchronousSchedulerClient.class)

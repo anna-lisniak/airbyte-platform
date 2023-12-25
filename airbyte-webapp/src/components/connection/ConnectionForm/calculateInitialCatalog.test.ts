@@ -1,16 +1,18 @@
-import { SyncSchema, SyncSchemaStream } from "core/domain/catalog";
 import {
+  AirbyteCatalog,
+  AirbyteStreamAndConfiguration,
+  CatalogDiff,
   DestinationSyncMode,
   FieldTransformTransformType,
+  SchemaChange,
   StreamDescriptor,
   StreamTransformTransformType,
   SyncMode,
-} from "core/request/AirbyteClient";
+} from "core/api/types/AirbyteClient";
 
-import calculateInitialCatalog from "./calculateInitialCatalog";
+import { analyzeSyncCatalogBreakingChanges, calculateInitialCatalog } from "./calculateInitialCatalog";
 
-const mockSyncSchemaStream: SyncSchemaStream = {
-  id: "1",
+const mockSyncSchemaStream: AirbyteStreamAndConfiguration = {
   stream: {
     sourceDefinedCursor: true,
     defaultCursorField: ["source_cursor"],
@@ -31,23 +33,6 @@ const mockSyncSchemaStream: SyncSchemaStream = {
 };
 
 describe("calculateInitialCatalog", () => {
-  it("should assign ids to all streams", () => {
-    const { id, ...restProps } = mockSyncSchemaStream;
-
-    const values = calculateInitialCatalog(
-      {
-        streams: [restProps],
-      } as unknown as SyncSchema,
-      [],
-      [],
-      false
-    );
-
-    values.streams.forEach((stream) => {
-      expect(stream).toHaveProperty("id", "0");
-    });
-  });
-
   it("should set default 'FullRefresh' if 'supportedSyncModes' in stream is empty(or null)", () => {
     const { config, stream: sourceDefinedStream } = mockSyncSchemaStream;
 
@@ -63,7 +48,7 @@ describe("calculateInitialCatalog", () => {
             config,
           },
         ],
-      } as unknown as SyncSchema,
+      } as unknown as AirbyteCatalog,
       [],
       [],
       false
@@ -81,7 +66,6 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -97,7 +81,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -132,7 +115,6 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -151,7 +133,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -170,7 +151,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "3",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -208,7 +188,6 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -221,7 +200,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -234,7 +212,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "3",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -266,7 +243,6 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -279,7 +255,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -292,7 +267,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "3",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -324,7 +298,6 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -337,7 +310,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -350,7 +322,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "3",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -382,7 +353,6 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -414,7 +384,6 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -428,7 +397,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -442,7 +410,6 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "3",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -474,7 +441,6 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -508,7 +474,7 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -540,7 +506,7 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -569,7 +535,7 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -598,7 +564,7 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -631,7 +597,7 @@ describe("calculateInitialCatalog", () => {
       {
         streams: [
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -647,7 +613,7 @@ describe("calculateInitialCatalog", () => {
             },
           },
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test2",
@@ -686,7 +652,7 @@ describe("calculateInitialCatalog", () => {
         streams: [
           // Stream with breaking change
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -702,7 +668,7 @@ describe("calculateInitialCatalog", () => {
           },
           // Should not be affected
           {
-            id: "2",
+            // id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test-2",
@@ -718,7 +684,7 @@ describe("calculateInitialCatalog", () => {
           },
           // Has change, but the source-defined primary key will fix it
           {
-            id: "3",
+            // id: "3",
             stream: {
               ...sourceDefinedStream,
               name: "test-3",
@@ -773,7 +739,7 @@ describe("calculateInitialCatalog", () => {
         streams: [
           // With breaking change
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -790,7 +756,7 @@ describe("calculateInitialCatalog", () => {
           },
           // Will be unaffected
           {
-            id: "2",
+            // id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test-2",
@@ -808,7 +774,7 @@ describe("calculateInitialCatalog", () => {
           },
           // Has breaking change but the updated stream source-defined cursor will fix it
           {
-            id: "3",
+            // id: "3",
             stream: {
               ...sourceDefinedStream,
               name: "test-3",
@@ -870,7 +836,7 @@ describe("calculateInitialCatalog", () => {
         streams: [
           // Breaking. Should be cleared
           {
-            id: "1",
+            // id: "1",
             stream: {
               ...sourceDefinedStream,
               name: "test",
@@ -889,7 +855,7 @@ describe("calculateInitialCatalog", () => {
           },
           // Should be unaffected
           {
-            id: "2",
+            // id: "2",
             stream: {
               ...sourceDefinedStream,
               name: "test-2",
@@ -908,7 +874,7 @@ describe("calculateInitialCatalog", () => {
           },
           // Should stay unaffected because updated stream will assign new source-defined cursor
           {
-            id: "3",
+            // id: "3",
             stream: {
               ...sourceDefinedStream,
               name: "test-3",
@@ -978,5 +944,82 @@ describe("calculateInitialCatalog", () => {
 
     expect(values.streams[2].config?.primaryKey).toEqual([["id"]]); // was unaffected
     expect(values.streams[2].config?.cursorField).toEqual(["created_at"]); // was unaffected because it's a source-defined cursor
+  });
+});
+
+describe("analyzeSyncCatalogBreakingChanges", () => {
+  it("should return syncCatalog unchanged when schemaChange is no_change and catalogDiff is undefined", () => {
+    const syncCatalog: AirbyteCatalog = { streams: [mockSyncSchemaStream] };
+    const result = analyzeSyncCatalogBreakingChanges(syncCatalog, undefined, SchemaChange.no_change);
+    expect(result).toEqual(syncCatalog);
+  });
+
+  it("should return syncCatalog unchanged when schemaChange is non_breaking and catalogDiff is undefined", () => {
+    const syncCatalog: AirbyteCatalog = { streams: [mockSyncSchemaStream] };
+    const result = analyzeSyncCatalogBreakingChanges(syncCatalog, undefined, SchemaChange.non_breaking);
+    expect(result).toEqual(syncCatalog);
+  });
+
+  it("should return syncCatalog with transformed streams when there are breaking changes - primaryKey", () => {
+    const syncCatalog: AirbyteCatalog = { streams: [mockSyncSchemaStream] };
+    const catalogDiff: CatalogDiff = {
+      transforms: [
+        {
+          transformType: StreamTransformTransformType.update_stream,
+          streamDescriptor: { name: "test", namespace: "namespace-test" },
+          updateStream: [
+            {
+              breaking: true,
+              transformType: FieldTransformTransformType.remove_field,
+              fieldName: ["old_primary_key"],
+            },
+          ],
+        },
+      ],
+    };
+    const result = analyzeSyncCatalogBreakingChanges(syncCatalog, catalogDiff, SchemaChange.breaking);
+    expect(result.streams[0].config?.primaryKey).toEqual([]);
+  });
+
+  it("should return syncCatalog with transformed streams when there are breaking changes - cursor", () => {
+    const syncCatalog: AirbyteCatalog = { streams: [mockSyncSchemaStream] };
+    const catalogDiff: CatalogDiff = {
+      transforms: [
+        {
+          transformType: StreamTransformTransformType.update_stream,
+          streamDescriptor: { name: "test", namespace: "namespace-test" },
+          updateStream: [
+            {
+              breaking: true,
+              transformType: FieldTransformTransformType.remove_field,
+              fieldName: ["old_cursor"],
+            },
+          ],
+        },
+      ],
+    };
+    const result = analyzeSyncCatalogBreakingChanges(syncCatalog, catalogDiff, SchemaChange.breaking);
+    expect(result.streams[0].config?.cursorField).toEqual([]);
+  });
+
+  it("should return syncCatalog unchanged when there are no breaking changes", () => {
+    const syncCatalog: AirbyteCatalog = { streams: [mockSyncSchemaStream] };
+    const catalogDiff: CatalogDiff = {
+      transforms: [
+        {
+          transformType: StreamTransformTransformType.update_stream,
+          streamDescriptor: { name: "test", namespace: "namespace-test" },
+          updateStream: [
+            {
+              breaking: false,
+              transformType: FieldTransformTransformType.add_field,
+              fieldName: ["new_field"],
+            },
+          ],
+        },
+      ],
+    };
+    const result = analyzeSyncCatalogBreakingChanges(syncCatalog, catalogDiff, SchemaChange.breaking);
+    expect(result).toEqual(syncCatalog);
   });
 });

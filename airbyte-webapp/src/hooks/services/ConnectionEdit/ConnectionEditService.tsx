@@ -3,7 +3,7 @@ import { useContext, useState, createContext, useCallback } from "react";
 import { useIntl } from "react-intl";
 import { useAsyncFn } from "react-use";
 
-import { useGetConnection, useGetConnectionQuery, useUpdateConnection } from "core/api";
+import { SchemaError, useGetConnection, useGetConnectionQuery, useUpdateConnection } from "core/api";
 import {
   AirbyteCatalog,
   ConnectionStatus,
@@ -11,11 +11,8 @@ import {
   WebBackendConnectionUpdate,
 } from "core/api/types/AirbyteClient";
 
-import { ConnectionEditHookFormContext } from "./ConnectionEditHookFormService";
 import { ConnectionFormServiceProvider } from "../ConnectionForm/ConnectionFormService";
-import { useExperiment } from "../Experiment";
-import { useNotificationService } from "../Notification/NotificationService";
-import { SchemaError } from "../useSourceHook";
+import { useNotificationService } from "../Notification";
 
 interface ConnectionEditProps {
   connectionId: string;
@@ -125,7 +122,6 @@ const useConnectionEdit = ({ connectionId }: ConnectionEditProps): ConnectionEdi
     discardRefreshedSchema,
   };
 };
-
 const ConnectionEditContext = createContext<Omit<ConnectionEditHook, "refreshSchema" | "schemaError"> | null>(null);
 
 export const ConnectionEditServiceProvider: React.FC<React.PropsWithChildren<ConnectionEditProps>> = ({
@@ -148,13 +144,7 @@ export const ConnectionEditServiceProvider: React.FC<React.PropsWithChildren<Con
 };
 
 export const useConnectionEditService = () => {
-  /**
-   *TODO: remove conditional context after successful CreateConnectionForm migration
-   *https://github.com/airbytehq/airbyte-platform-internal/issues/8639
-   */
-  const doUseCreateConnectionHookForm = useExperiment("form.createConnectionHookForm", false);
-  const contextType = doUseCreateConnectionHookForm ? ConnectionEditHookFormContext : ConnectionEditContext;
-  const context = useContext(contextType);
+  const context = useContext(ConnectionEditContext);
   if (context === null) {
     throw new Error("useConnectionEditService must be used within a ConnectionEditServiceProvider");
   }

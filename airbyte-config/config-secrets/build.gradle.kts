@@ -1,7 +1,7 @@
 plugins {
     id("io.airbyte.gradle.jvm.lib")
     id("io.airbyte.gradle.publish")
-    id("java-test-fixtures")
+    `java-test-fixtures`
     kotlin("jvm")
     kotlin("kapt")
 }
@@ -23,6 +23,7 @@ dependencies {
     api(libs.airbyte.protocol)
     api(libs.jakarta.transaction.api)
     api(libs.micronaut.data.tx)
+    api(libs.aws.java.sdk.sts)
     api(project(":airbyte-commons"))
 
     /*
@@ -31,7 +32,6 @@ dependencies {
      * that do need these dependencies will already have them declared, as they will
      * need to define singletons from these modules in order for everything work.
      */
-    implementation(project(":airbyte-config:config-persistence"))
     implementation(project(":airbyte-config:config-models"))
     implementation(project(":airbyte-json-validation"))
 

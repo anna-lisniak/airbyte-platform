@@ -1,10 +1,8 @@
-import { QueryObserverResult, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
-import { useAuthService, useCurrentUser } from "core/services/auth";
-import { SCOPE_USER } from "services/Scope";
+import { useCurrentUser } from "core/services/auth";
 
-import { useListUsers } from "./users";
 import {
   deleteCloudWorkspace,
   getCloudWorkspace,
@@ -14,6 +12,7 @@ import {
   webBackendListWorkspacesByUser,
   webBackendListWorkspacesByUserPaginated,
 } from "../../generated/CloudApi";
+import { SCOPE_USER } from "../../scopes";
 import {
   CloudWorkspaceRead,
   CloudWorkspaceReadList,
@@ -22,11 +21,13 @@ import {
 } from "../../types/CloudApi";
 import { useRequestOptions } from "../../useRequestOptions";
 import { useSuspenseQuery } from "../../useSuspenseQuery";
+import { useListPermissions } from "../permissions";
+import { useCurrentWorkspace } from "../workspaces";
 
 export const workspaceKeys = {
   all: [SCOPE_USER, "cloud_workspaces"] as const,
   lists: () => [...workspaceKeys.all, "list"] as const,
-  list: (filters: string) => [...workspaceKeys.lists(), { filters }] as const,
+  list: (filters: string | Record<string, string>) => [...workspaceKeys.lists(), { filters }] as const,
   detail: (id: number | string) => [...workspaceKeys.all, "detail", id] as const,
   usage: (id: number | string, timeWindow: string) => [...workspaceKeys.all, id, timeWindow, "usage"] as const,
 };
@@ -38,24 +39,6 @@ export function useListCloudWorkspaces() {
   return useSuspenseQuery(workspaceKeys.lists(), () =>
     webBackendListWorkspacesByUser({ userId: user.userId }, requestOptions)
   );
-}
-
-export const getListCloudWorkspacesAsyncQueryKey = () => {
-  return workspaceKeys.lists();
-};
-
-export const useListCloudWorkspacesAsyncQuery = (userId: string) => {
-  const requestOptions = useRequestOptions();
-
-  return () => webBackendListWorkspacesByUser({ userId }, requestOptions);
-};
-
-export function useListCloudWorkspacesAsync(): QueryObserverResult<CloudWorkspaceReadList> {
-  const user = useCurrentUser();
-  const queryKey = getListCloudWorkspacesAsyncQueryKey();
-  const queryFn = useListCloudWorkspacesAsyncQuery(user.userId);
-
-  return useQuery(queryKey, queryFn);
 }
 
 export function useCreateCloudWorkspace() {
@@ -76,12 +59,12 @@ export function useCreateCloudWorkspace() {
   );
 }
 
-export const useListCloudWorkspacesInfinite = (pageSize: number, nameContains?: string) => {
+export const useListCloudWorkspacesInfinite = (pageSize: number, nameContains: string) => {
   const { userId } = useCurrentUser();
   const requestOptions = useRequestOptions();
 
   return useInfiniteQuery(
-    workspaceKeys.list(`paginated`),
+    workspaceKeys.list({ pageSize: pageSize.toString(), nameContains }),
     async ({ pageParam = 0 }: { pageParam?: number }) => {
       return {
         data: await webBackendListWorkspacesByUserPaginated(
@@ -92,9 +75,10 @@ export const useListCloudWorkspacesInfinite = (pageSize: number, nameContains?: 
       };
     },
     {
-      suspense: true,
+      suspense: false,
       getPreviousPageParam: (firstPage) => (firstPage.pageParam > 0 ? firstPage.pageParam - 1 : undefined),
       getNextPageParam: (lastPage) => (lastPage.data.workspaces.length < pageSize ? undefined : lastPage.pageParam + 1),
+      cacheTime: 10000,
     }
   );
 };
@@ -188,9 +172,17 @@ export function useGetCloudWorkspaceUsage(workspaceId: string, timeWindow: Consu
   );
 }
 
+/**
+ * Checks whether a user is in a foreign workspace. A foreign workspace is any workspace the user doesn't
+ * have explicit permissions to via workspace permissions or being part of the organization the workspace is in.
+ */
 export const useIsForeignWorkspace = () => {
-  const { user } = useAuthService();
-  const workspaceUsers = useListUsers();
+  const { userId } = useCurrentUser();
+  const { permissions } = useListPermissions(userId);
+  const { workspaceId, organizationId } = useCurrentWorkspace();
 
-  return !user || !workspaceUsers.users.some((member) => member.userId === user.userId);
+  return !permissions.some(
+    (permission) =>
+      permission.workspaceId === workspaceId || (organizationId && permission.organizationId === organizationId)
+  );
 };

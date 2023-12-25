@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mock;
 
 import io.airbyte.commons.temporal.config.WorkerMode;
 import io.airbyte.config.secrets.persistence.SecretPersistence;
+import io.airbyte.workers.storage.DocumentStoreClient;
 import io.airbyte.workers.temporal.scheduling.activities.ConfigFetchActivity;
 import io.airbyte.workers.temporal.scheduling.activities.ConfigFetchActivityImpl;
 import io.airbyte.workers.temporal.sync.DbtTransformationActivity;
@@ -28,6 +29,7 @@ import io.micronaut.context.annotation.Property;
 import io.micronaut.context.annotation.Replaces;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import org.junit.jupiter.api.Test;
 
 @MicronautTest(environments = {WorkerMode.DATA_PLANE})
@@ -49,6 +51,18 @@ class DataPlaneActivityInitializationMicronautTest {
   @Bean
   @Replaces(SecretPersistence.class)
   SecretPersistence secretPersistence = mock(SecretPersistence.class);
+
+  @Bean
+  @Replaces(value = DocumentStoreClient.class,
+            named = "stateDocumentStore")
+  @Named("stateDocumentStore")
+  DocumentStoreClient documentStoreClient = mock(DocumentStoreClient.class);
+
+  @Bean
+  @Replaces(value = DocumentStoreClient.class,
+            named = "outputDocumentStore")
+  @Named("outputDocumentStore")
+  DocumentStoreClient outputDocumentStoreClient = mock(DocumentStoreClient.class);
 
   @Inject
   ConfigFetchActivity configFetchActivity;

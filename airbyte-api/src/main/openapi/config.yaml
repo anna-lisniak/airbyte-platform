@@ -81,6 +81,10 @@ tags:
     description: Interactions with permission related resources.
   - name: organization
     description: Interactions with organizations.
+  - name: deployment_metadata
+    description: Metadata about the Airbyte deployment
+  - name: applications
+    description: Applications can be used to provide api access for Users
 
 paths:
   /v1/workspaces/create:
@@ -94,6 +98,28 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/WorkspaceCreate"
+        required: true
+      responses:
+        "200":
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceRead"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+  /v1/workspaces/create_if_not_exist:
+    post:
+      tags:
+        - workspace
+        - internal
+      summary: Creates a workspace with an explicit workspace ID. This should be use in acceptance tests only.
+      operationId: createWorkspaceIfNotExist
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceCreateWithId"
         required: true
       responses:
         "200":
@@ -340,6 +366,29 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/WorkspaceUpdateName"
+        required: true
+      responses:
+        "200":
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceRead"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+  /v1/workspaces/update_organization:
+    post:
+      tags:
+        - workspace
+      summary: Update workspace organization
+      operationId: updateWorkspaceOrganization
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceUpdateOrganization"
         required: true
       responses:
         "200":
@@ -3370,6 +3419,30 @@ paths:
         "422":
           $ref: "#/components/responses/InvalidInputResponse"
 
+  /v1/users/get_by_email:
+    post:
+      tags:
+        - user
+      summary: Find Airbyte user by email
+      operationId: getUserByEmail
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserEmailRequestBody"
+        required: true
+      responses:
+        "200":
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRead"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+
   /v1/users/get_or_create_by_auth_id:
     post:
       tags:
@@ -3623,7 +3696,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/WorkspaceIdRequestBody"
+              $ref: "#/components/schemas/SecretPersistenceConfigGetRequestBody"
         required: true
       responses:
         "200":
@@ -4215,6 +4288,99 @@ paths:
                 $ref: "#/components/schemas/OrganizationReadList"
         "404":
           $ref: "#/components/responses/NotFoundResponse"
+  /v1/deployment/metadata:
+    post:
+      summary: Provides the Airbyte deployment metadata.
+      tags:
+        - deployment_metadata
+      operationId: getDeploymentMetadata
+      responses:
+        "200":
+          description: The Airbyte deployment metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentMetadataRead"
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+  /v1/applications/list:
+    post:
+      tags:
+        - applications
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationReadList"
+          description: Successful operation
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+      operationId: listApplications
+      summary: Returns all Applications for a User.
+      description: List Applications for a User.
+  /v1/applications/delete:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationId"
+        required: true
+      tags:
+        - applications
+      responses:
+        "200":
+          description: Successful operation
+        "404":
+          $ref: "#/components/responses/NotFoundResponse"
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+      operationId: deleteApplication
+      summary: Deletes an Application.
+      description: Deletes an Application.
+  /v1/applications/create:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationCreate"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationRead"
+          description: Successful operation
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+      operationId: createApplication
+      summary: Creates a new Application.
+      description: Creates a new Application.
+  /v1/applications/token:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationTokenRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessToken"
+          description: Successful operation
+        "422":
+          $ref: "#/components/responses/InvalidInputResponse"
+      operationId: applicationTokenRequest
+      summary: Grant an Access Token for an Application.
+      description: Takes the client_id and client_secret for an application and returns an Access Token.
 
 components:
   securitySchemes:
@@ -4235,6 +4401,42 @@ components:
       required:
         - name
       properties:
+        email:
+          type: string
+          format: email
+        anonymousDataCollection:
+          type: boolean
+        name:
+          type: string
+        news:
+          type: boolean
+        securityUpdates:
+          type: boolean
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        notificationSettings:
+          $ref: "#/components/schemas/NotificationSettings"
+        displaySetupWizard:
+          type: boolean
+        defaultGeography:
+          $ref: "#/components/schemas/Geography"
+        webhookConfigs:
+          type: array
+          items:
+            $ref: "#/components/schemas/WebhookConfigWrite"
+        organizationId:
+          $ref: "#/components/schemas/OrganizationId"
+    WorkspaceCreateWithId:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
         email:
           type: string
           format: email
@@ -4382,6 +4584,8 @@ components:
       properties:
         workspaceId:
           $ref: "#/components/schemas/WorkspaceId"
+        includeTombstone:
+          type: boolean
     ListConnectionsForWorkspacesRequestBody:
       type: object
       required:
@@ -4515,6 +4719,16 @@ components:
           $ref: "#/components/schemas/WorkspaceId"
         name:
           type: string
+    WorkspaceUpdateOrganization:
+      type: object
+      required:
+        - workspaceId
+        - organizationId
+      properties:
+        workspaceId:
+          $ref: "#/components/schemas/WorkspaceId"
+        organizationId:
+          $ref: "#/components/schemas/OrganizationId"
     WorkspaceUpdate:
       type: object
       description: Used to apply a patch-style update to a workspace, which means that null properties remain unchanged
@@ -6016,6 +6230,10 @@ components:
         lastSuccessfulSync:
           type: integer
           format: int64
+        lastSyncJobId:
+          $ref: "#/components/schemas/JobId"
+        lastSyncAttemptNumber:
+          $ref: "#/components/schemas/AttemptNumber"
         nextSync:
           type: integer
           format: int64
@@ -6023,8 +6241,8 @@ components:
           type: boolean
         isLastCompletedJobReset:
           type: boolean
-        failureType:
-          $ref: "#/components/schemas/FailureType"
+        failureReason:
+          $ref: "#/components/schemas/FailureReason"
     ConnectionSyncProgressRead:
       type: array
       items:
@@ -6071,14 +6289,17 @@ components:
       required:
         - timestamp
         - status
-        - stream
+        - streamName
+        - streamNamespace
       properties:
         timestamp:
           type: integer
           format: int64
         status:
           $ref: "#/components/schemas/JobStatus"
-        stream:
+        streamName:
+          type: string
+        streamNamespace:
           type: string
     ConnectionDataHistoryRead:
       type: array
@@ -6088,14 +6309,14 @@ components:
       type: object
       required:
         - timestamp
-        - bytes
+        - recordsCommitted
       properties:
         timestamp:
           type: integer
           format: int
-        bytes:
+        recordsCommitted:
           type: integer
-          format: int
+          format: int64
     ConnectionStreamHistoryRead:
       type: array
       items:
@@ -6104,20 +6325,20 @@ components:
       type: object
       required:
         - timestamp
-        - stream
-        - namespace
-        - volume
+        - streamName
+        - streamNamespace
+        - recordsCommitted
       properties:
         timestamp:
           type: integer
           format: int
-        stream:
+        streamName:
           type: string
-        namespace:
+        streamNamespace:
           type: string
-        volume:
+        recordsCommitted:
           type: integer
-          format: int
+          format: int64
     SchemaChange:
       enum:
         - no_change
@@ -6457,6 +6678,8 @@ components:
           type: boolean
         orgLevelBilling:
           type: boolean
+        email:
+          type: string
     OrganizationCreateRequestBody:
       type: object
       required:
@@ -6785,6 +7008,14 @@ components:
         - authUserId
       properties:
         authUserId:
+          type: string
+
+    UserEmailRequestBody:
+      type: object
+      required:
+        - email
+      properties:
+        email:
           type: string
 
     UserCreate:
@@ -8722,6 +8953,24 @@ components:
           type: string
         message:
           type: string
+    DeploymentMetadataRead:
+      type: object
+      required:
+        - environment
+        - id
+        - mode
+        - version
+      properties:
+        environment:
+          type: string
+        id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+        version:
+          type: string
+
     NotFoundKnownExceptionInfo:
       type: object
       required:
@@ -8850,7 +9099,7 @@ components:
         secretPersistenceType:
           $ref: "#/components/schemas/SecretPersistenceType"
         configuration:
-          type: object
+          $ref: "#/components/schemas/SecretPersistenceConfigurationJson"
         scopeType:
           $ref: "#/components/schemas/ScopeType"
         scopeId:
@@ -8863,6 +9112,73 @@ components:
         - google
         - vault
         - aws
+    SecretPersistenceConfigGetRequestBody:
+      description: Request body for getting secret persistence config
+      required:
+        - scopeType
+        - scopeId
+      properties:
+        scopeType:
+          $ref: "#/components/schemas/ScopeType"
+        scopeId:
+          $ref: "#/components/schemas/ScopeId"
+    SecretPersistenceConfigurationJson:
+      type: object
+    ApplicationCreate:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          type: string
+    ApplicationId:
+      type: string
+    ApplicationReadList:
+      required:
+        - applications
+      type: object
+      properties:
+        applications:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApplicationRead"
+    ApplicationRead:
+      required:
+        - id
+        - name
+        - clientId
+        - clientSecret
+        - createdAt
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        clientId:
+          type: string
+        clientSecret:
+          type: string
+        createdAt:
+          type: integer
+          format: int64
+    ApplicationTokenRequest:
+      required:
+        - client_id
+        - client_secret
+      type: object
+      properties:
+        client_id:
+          type: string
+        client_secret:
+          type: string
+    AccessToken:
+      required:
+        - access_token
+      type: object
+      properties:
+        access_token:
+          type: string
 
   responses:
     NotFoundResponse:

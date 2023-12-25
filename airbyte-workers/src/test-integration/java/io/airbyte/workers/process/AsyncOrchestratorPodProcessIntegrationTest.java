@@ -18,6 +18,7 @@ import io.airbyte.metrics.lib.MetricClient;
 import io.airbyte.workers.storage.DocumentStoreClient;
 import io.airbyte.workers.storage.S3DocumentStoreClient;
 import io.airbyte.workers.sync.OrchestratorConstants;
+import io.airbyte.workers.workload.JobOutputDocStore;
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
 import io.fabric8.kubernetes.api.model.ContainerPort;
 import io.fabric8.kubernetes.api.model.EnvVar;
@@ -53,7 +54,7 @@ class AsyncOrchestratorPodProcessIntegrationTest {
 
     final var minioContainer = new ContainerBuilder()
         .withName("minio")
-        .withImage("minio/minio:latest")
+        .withImage("minio/minio:RELEASE.2023-11-15T20-43-25Z")
         .withArgs("server", "/home/shared")
         .withEnv(
             new EnvVar("MINIO_ACCESS_KEY", "minio", null),
@@ -124,7 +125,9 @@ class AsyncOrchestratorPodProcessIntegrationTest {
         "airbyte-admin",
         null,
         mock(MetricClient.class),
-        "test");
+        "test",
+        new JobOutputDocStore(documentStoreClient),
+        "workload_id");
 
     final Map<Integer, Integer> portMap = Map.of(
         serverPort, serverPort,
@@ -141,7 +144,8 @@ class AsyncOrchestratorPodProcessIntegrationTest {
 
     asyncProcess.create(Map.of(), new WorkerConfigs(new EnvConfigs()).getResourceRequirements(), Map.of(
         OrchestratorConstants.INIT_FILE_APPLICATION, AsyncOrchestratorPodProcess.NO_OP,
-        OrchestratorConstants.INIT_FILE_ENV_MAP, Jsons.serialize(envMap)), portMap, workerConfigs.getworkerKubeNodeSelectors());
+        OrchestratorConstants.INIT_FILE_ENV_MAP, Jsons.serialize(envMap)), portMap, workerConfigs.getworkerKubeNodeSelectors(),
+        workerConfigs.getWorkerKubeTolerations());
 
     // a final activity waits until there is output from the kube pod process
     asyncProcess.waitFor(10, TimeUnit.SECONDS);

@@ -3,8 +3,9 @@ import { FormattedMessage } from "react-intl";
 
 import { useCurrentWorkspace } from "core/api";
 import { FeatureItem, useFeature } from "core/services/features";
-import { useIntent } from "core/utils/rbac/intent";
+import { useIntent } from "core/utils/rbac";
 import { useGetConnectorsOutOfDate } from "hooks/services/useConnector";
+import { ApplicationSettingsView } from "packages/cloud/views/users/ApplicationSettingsView/ApplicationSettingsView";
 import { SettingsRoutePaths } from "pages/routePaths";
 import { NotificationPage } from "pages/SettingsPage/pages/NotificationPage";
 import { PageConfig, SettingsPageBase } from "pages/SettingsPage/SettingsPageBase";
@@ -21,7 +22,9 @@ export const SettingsPage: React.FC = () => {
   const { organizationId, workspaceId } = useCurrentWorkspace();
   const { countNewSourceVersion, countNewDestinationVersion } = useGetConnectorsOutOfDate();
   const multiWorkspaceUI = useFeature(FeatureItem.MultiWorkspaceUI);
-  const isAccessManagementEnabled = false;
+  const isAccessManagementEnabled = useFeature(FeatureItem.RBAC);
+  const apiTokenManagement = false;
+  // const apiTokenManagement = useFeature(FeatureItem.APITokenManagement);
   const canViewWorkspaceSettings = useIntent("ViewWorkspaceSettings", { workspaceId });
   const canViewOrganizationSettings = useIntent("ViewOrganizationSettings", { organizationId });
 
@@ -36,6 +39,15 @@ export const SettingsPage: React.FC = () => {
               name: <FormattedMessage id="settings.account" />,
               component: AccountPage,
             },
+            ...(apiTokenManagement
+              ? [
+                  {
+                    path: `${SettingsRoutePaths.Applications}`,
+                    name: <FormattedMessage id="settings.applications" />,
+                    component: ApplicationSettingsView,
+                  },
+                ]
+              : []),
           ],
         },
         ...(canViewWorkspaceSettings
@@ -114,7 +126,7 @@ export const SettingsPage: React.FC = () => {
               },
             ]
           : []),
-        ...(multiWorkspaceUI
+        ...(multiWorkspaceUI && canViewWorkspaceSettings
           ? [
               {
                 category: <FormattedMessage id="settings.instanceSettings" />,
@@ -138,6 +150,7 @@ export const SettingsPage: React.FC = () => {
       ],
     }),
     [
+      apiTokenManagement,
       canViewOrganizationSettings,
       canViewWorkspaceSettings,
       countNewDestinationVersion,

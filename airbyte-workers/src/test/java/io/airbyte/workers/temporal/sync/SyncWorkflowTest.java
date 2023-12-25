@@ -65,6 +65,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @SuppressWarnings({"PMD.UnusedPrivateField", "PMD.UnusedPrivateMethod"})
 class SyncWorkflowTest {
@@ -85,6 +87,7 @@ class SyncWorkflowTest {
   private WebhookOperationActivityImpl webhookOperationActivity;
   private RefreshSchemaActivityImpl refreshSchemaActivity;
   private ConfigFetchActivityImpl configFetchActivity;
+  private WorkloadFeatureFlagActivity workloadFeatureFlagActivity;
 
   // AIRBYTE CONFIGURATION
   private static final long JOB_ID = 11L;
@@ -110,6 +113,8 @@ class SyncWorkflowTest {
 
   private static final String SYNC_QUEUE = "SYNC";
 
+  private static final UUID ORGANIZATION_ID = UUID.randomUUID();
+
   private StandardSync sync;
   private StandardSyncInput syncInput;
   private NormalizationInput normalizationInput;
@@ -132,7 +137,7 @@ class SyncWorkflowTest {
     syncWorker = testEnv.newWorker(SYNC_QUEUE);
     client = testEnv.getWorkflowClient();
 
-    final ImmutablePair<StandardSync, StandardSyncInput> syncPair = TestConfigHelpers.createSyncConfig();
+    final ImmutablePair<StandardSync, StandardSyncInput> syncPair = TestConfigHelpers.createSyncConfig(ORGANIZATION_ID);
     sync = syncPair.getKey();
     syncInput = syncPair.getValue();
 
@@ -150,14 +155,14 @@ class SyncWorkflowTest {
         .withResourceRequirements(new ResourceRequirements())
         .withConnectionId(syncInput.getConnectionId())
         .withWorkspaceId(syncInput.getWorkspaceId())
-        .withConnectionContext(new ConnectionContext());
+        .withConnectionContext(new ConnectionContext().withOrganizationId(ORGANIZATION_ID));
 
     operatorDbtInput = new OperatorDbtInput()
         .withDestinationConfiguration(syncInput.getDestinationConfiguration())
         .withOperatorDbt(syncInput.getOperationSequence().get(1).getOperatorDbt())
         .withConnectionId(syncInput.getConnectionId())
         .withWorkspaceId(syncInput.getWorkspaceId())
-        .withConnectionContext(new ConnectionContext());
+        .withConnectionContext(new ConnectionContext().withOrganizationId(ORGANIZATION_ID));
 
     replicationActivity = mock(ReplicationActivityImpl.class);
     normalizationActivity = mock(NormalizationActivityImpl.class);
@@ -166,14 +171,16 @@ class SyncWorkflowTest {
     webhookOperationActivity = mock(WebhookOperationActivityImpl.class);
     refreshSchemaActivity = mock(RefreshSchemaActivityImpl.class);
     configFetchActivity = mock(ConfigFetchActivityImpl.class);
+    workloadFeatureFlagActivity = mock(WorkloadFeatureFlagActivityImpl.class);
 
-    when(normalizationActivity.generateNormalizationInputWithMinimumPayloadWithConnectionId(any(), any(), any(), any()))
+    when(normalizationActivity.generateNormalizationInputWithMinimumPayloadWithConnectionId(any(), any(), any(), any(), any()))
         .thenReturn(normalizationInput);
     when(normalizationSummaryCheckActivity.shouldRunNormalization(any(), any(), any())).thenReturn(true);
 
     when(configFetchActivity.getSourceId(sync.getConnectionId())).thenReturn(Optional.of(SOURCE_ID));
     when(refreshSchemaActivity.shouldRefreshSchema(SOURCE_ID)).thenReturn(true);
     when(configFetchActivity.getStatus(sync.getConnectionId())).thenReturn(Optional.of(ConnectionStatus.ACTIVE));
+    when(workloadFeatureFlagActivity.useWorkloadApi(any())).thenReturn(false);
 
     longActivityOptions = ActivityOptions.newBuilder()
         .setScheduleToCloseTimeout(Duration.ofDays(3))
@@ -235,7 +242,7 @@ class SyncWorkflowTest {
   // bundle up all the temporal worker setup / execution into one method.
   private StandardSyncOutput execute() {
     syncWorker.registerActivitiesImplementations(replicationActivity, normalizationActivity, dbtTransformationActivity,
-        normalizationSummaryCheckActivity, webhookOperationActivity, refreshSchemaActivity, configFetchActivity);
+        normalizationSummaryCheckActivity, webhookOperationActivity, refreshSchemaActivity, configFetchActivity, workloadFeatureFlagActivity);
     testEnv.start();
     final SyncWorkflow workflow =
         client.newWorkflowStub(SyncWorkflow.class, WorkflowOptions.newBuilder().setTaskQueue(SYNC_QUEUE).build());
@@ -245,11 +252,6 @@ class SyncWorkflowTest {
 
   @Test
   void testSuccess() throws Exception {
-    doReturn(replicationSuccessOutput).when(replicationActivity).replicate(
-        JOB_RUN_CONFIG,
-        SOURCE_LAUNCHER_CONFIG,
-        DESTINATION_LAUNCHER_CONFIG,
-        syncInput, SYNC_QUEUE);
     doReturn(replicationSuccessOutput).when(replicationActivity).replicateV2(any());
 
     doReturn(normalizationSummary).when(normalizationActivity).normalize(
@@ -269,13 +271,32 @@ class SyncWorkflowTest {
         actualOutput.getStandardSyncSummary());
   }
 
+  @ParameterizedTest
+  @ValueSource(booleans = {true, false})
+  void passesThroughFFCall(final boolean useWorkloadApi) throws Exception {
+    when(workloadFeatureFlagActivity.useWorkloadApi(any())).thenReturn(useWorkloadApi);
+
+    doReturn(replicationSuccessOutput).when(replicationActivity).replicateV2(any());
+
+    doReturn(normalizationSummary).when(normalizationActivity).normalize(
+        JOB_RUN_CONFIG,
+        DESTINATION_LAUNCHER_CONFIG,
+        normalizationInput);
+
+    final StandardSyncOutput actualOutput = execute();
+
+    verifyReplication(replicationActivity, syncInput, useWorkloadApi, false);
+    verifyNormalize(normalizationActivity, normalizationInput);
+    verifyDbtTransform(dbtTransformationActivity, null, operatorDbtInput);
+    verifyShouldRefreshSchema(refreshSchemaActivity);
+    verifyRefreshSchema(refreshSchemaActivity, sync, syncInput);
+    assertEquals(
+        replicationSuccessOutput.withNormalizationSummary(normalizationSummary).getStandardSyncSummary(),
+        actualOutput.getStandardSyncSummary());
+  }
+
   @Test
   void testReplicationFailure() throws Exception {
-    doThrow(new IllegalArgumentException("induced exception")).when(replicationActivity).replicate(
-        JOB_RUN_CONFIG,
-        SOURCE_LAUNCHER_CONFIG,
-        DESTINATION_LAUNCHER_CONFIG,
-        syncInput, SYNC_QUEUE);
     doThrow(new IllegalArgumentException("induced exception")).when(replicationActivity).replicateV2(any());
 
     assertThrows(WorkflowFailedException.class, this::execute);
@@ -289,11 +310,6 @@ class SyncWorkflowTest {
 
   @Test
   void testReplicationFailedGracefully() throws Exception {
-    doReturn(replicationFailOutput).when(replicationActivity).replicate(
-        JOB_RUN_CONFIG,
-        SOURCE_LAUNCHER_CONFIG,
-        DESTINATION_LAUNCHER_CONFIG,
-        syncInput, SYNC_QUEUE);
     doReturn(replicationFailOutput).when(replicationActivity).replicateV2(any());
 
     doReturn(normalizationSummary).when(normalizationActivity).normalize(
@@ -315,11 +331,6 @@ class SyncWorkflowTest {
 
   @Test
   void testNormalizationFailure() throws Exception {
-    doReturn(replicationSuccessOutput).when(replicationActivity).replicate(
-        JOB_RUN_CONFIG,
-        SOURCE_LAUNCHER_CONFIG,
-        DESTINATION_LAUNCHER_CONFIG,
-        syncInput, SYNC_QUEUE);
     doReturn(replicationSuccessOutput).when(replicationActivity).replicateV2(any());
 
     doThrow(new IllegalArgumentException("induced exception")).when(normalizationActivity).normalize(
@@ -341,14 +352,6 @@ class SyncWorkflowTest {
     doAnswer(ignored -> {
       cancelWorkflow();
       return replicationSuccessOutput;
-    }).when(replicationActivity).replicate(
-        JOB_RUN_CONFIG,
-        SOURCE_LAUNCHER_CONFIG,
-        DESTINATION_LAUNCHER_CONFIG,
-        syncInput, SYNC_QUEUE);
-    doAnswer(ignored -> {
-      cancelWorkflow();
-      return replicationSuccessOutput;
     }).when(replicationActivity).replicateV2(any());
 
     assertThrows(WorkflowFailedException.class, this::execute);
@@ -362,11 +365,6 @@ class SyncWorkflowTest {
 
   @Test
   void testCancelDuringNormalization() throws Exception {
-    doReturn(replicationSuccessOutput).when(replicationActivity).replicate(
-        JOB_RUN_CONFIG,
-        SOURCE_LAUNCHER_CONFIG,
-        DESTINATION_LAUNCHER_CONFIG,
-        syncInput, SYNC_QUEUE);
     doReturn(replicationSuccessOutput).when(replicationActivity).replicateV2(any());
 
     doAnswer(ignored -> {
@@ -389,17 +387,7 @@ class SyncWorkflowTest {
   @Test
   @Disabled("This behavior has been disabled temporarily (OC Issue #741)")
   void testSkipNormalization() throws Exception {
-    final SyncStats syncStats = new SyncStats().withRecordsCommitted(0L);
-    final StandardSyncSummary standardSyncSummary = new StandardSyncSummary().withTotalStats(syncStats);
-    final StandardSyncOutput replicationSuccessOutputNoRecordsCommitted =
-        new StandardSyncOutput().withOutputCatalog(syncInput.getCatalog()).withStandardSyncSummary(standardSyncSummary);
     when(normalizationSummaryCheckActivity.shouldRunNormalization(any(), any(), any())).thenReturn(false);
-
-    doReturn(replicationSuccessOutputNoRecordsCommitted).when(replicationActivity).replicate(
-        JOB_RUN_CONFIG,
-        SOURCE_LAUNCHER_CONFIG,
-        DESTINATION_LAUNCHER_CONFIG,
-        syncInput, SYNC_QUEUE);
 
     execute();
 
@@ -412,7 +400,6 @@ class SyncWorkflowTest {
 
   @Test
   void testWebhookOperation() {
-    when(replicationActivity.replicate(any(), any(), any(), any(), any())).thenReturn(new StandardSyncOutput());
     when(replicationActivity.replicateV2(any())).thenReturn(new StandardSyncOutput());
     final StandardSyncOperation webhookOperation = new StandardSyncOperation()
         .withOperationId(UUID.randomUUID())
@@ -425,7 +412,9 @@ class SyncWorkflowTest {
     syncInput.withOperationSequence(List.of(webhookOperation)).withWebhookOperationConfigs(workspaceWebhookConfigs);
     when(webhookOperationActivity.invokeWebhook(
         new OperatorWebhookInput().withWebhookConfigId(WEBHOOK_CONFIG_ID).withExecutionUrl(WEBHOOK_URL).withExecutionBody(WEBHOOK_BODY)
-            .withWorkspaceWebhookConfigs(workspaceWebhookConfigs).withConnectionContext(new ConnectionContext()))).thenReturn(true);
+            .withWorkspaceWebhookConfigs(workspaceWebhookConfigs)
+            .withConnectionContext(new ConnectionContext().withOrganizationId(ORGANIZATION_ID))))
+                .thenReturn(true);
     final StandardSyncOutput actualOutput = execute();
     assertEquals(actualOutput.getWebhookOperationSummary().getSuccesses().get(0), WEBHOOK_CONFIG_ID);
   }
@@ -471,8 +460,14 @@ class SyncWorkflowTest {
   }
 
   private static void verifyReplication(final ReplicationActivity replicationActivity, final StandardSyncInput syncInput) {
+    verifyReplication(replicationActivity, syncInput, false, false);
+  }
+
+  private static void verifyReplication(final ReplicationActivity replicationActivity,
+                                        final StandardSyncInput syncInput,
+                                        final boolean useWorkloadApi,
+                                        final boolean useOutputDocStore) {
     verify(replicationActivity).replicateV2(new ReplicationActivityInput(
-        syncInput,
         syncInput.getSourceId(),
         syncInput.getDestinationId(),
         syncInput.getSourceConfiguration(),
@@ -490,7 +485,9 @@ class SyncWorkflowTest {
         syncInput.getNamespaceFormat(),
         syncInput.getPrefix(),
         null,
-        new ConnectionContext()));
+        new ConnectionContext().withOrganizationId(ORGANIZATION_ID),
+        useWorkloadApi,
+        useOutputDocStore));
   }
 
   private void verifyNormalize(final NormalizationActivity normalizationActivity, final NormalizationInput normalizationInput) {

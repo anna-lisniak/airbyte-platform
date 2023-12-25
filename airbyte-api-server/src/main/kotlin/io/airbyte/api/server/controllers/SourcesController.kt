@@ -36,9 +36,11 @@ import javax.ws.rs.core.Response
 open class SourcesController(
   private val sourceService: SourceService,
   private val userService: UserService,
+  private val trackingHelper: TrackingHelper,
 ) : SourcesApi {
   override fun createSource(
     sourceCreateRequest: SourceCreateRequest,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
@@ -49,7 +51,7 @@ open class SourcesController(
           val configurationJsonNode = sourceCreateRequest.configuration as ObjectNode
           if (configurationJsonNode.findValue(SOURCE_TYPE) == null) {
             val unprocessableEntityProblem = UnprocessableEntityProblem()
-            TrackingHelper.trackFailuresIfAny(
+            trackingHelper.trackFailuresIfAny(
               SOURCES_PATH,
               POST,
               userId,
@@ -64,11 +66,12 @@ open class SourcesController(
     removeSourceTypeNode(sourceCreateRequest)
 
     val sourceResponse: Any? =
-      TrackingHelper.callWithTracker(
+      trackingHelper.callWithTracker(
         {
           sourceService.createSource(
             sourceCreateRequest,
             sourceDefinitionId,
+            authorization,
             getLocalUserInfoIfNull(userInfo),
           )
         },
@@ -77,7 +80,7 @@ open class SourcesController(
         userId,
       )
 
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       SOURCES_PATH,
       POST,
       userId,
@@ -91,15 +94,17 @@ open class SourcesController(
 
   override fun deleteSource(
     sourceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
 
     val sourceResponse: Any? =
-      TrackingHelper.callWithTracker(
+      trackingHelper.callWithTracker(
         {
           sourceService.deleteSource(
             sourceId,
+            authorization,
             getLocalUserInfoIfNull(userInfo),
           )
         },
@@ -108,7 +113,7 @@ open class SourcesController(
         userId,
       )
 
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       SOURCES_WITH_ID_PATH,
       DELETE,
       userId,
@@ -121,15 +126,17 @@ open class SourcesController(
 
   override fun getSource(
     sourceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
 
     val sourceResponse: Any? =
-      TrackingHelper.callWithTracker(
+      trackingHelper.callWithTracker(
         {
           sourceService.getSource(
             sourceId,
+            authorization,
             getLocalUserInfoIfNull(userInfo),
           )
         },
@@ -138,7 +145,7 @@ open class SourcesController(
         userId,
       )
 
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       SOURCES_WITH_ID_PATH,
       GET,
       userId,
@@ -151,9 +158,10 @@ open class SourcesController(
 
   override fun initiateOAuth(
     initiateOauthRequest: InitiateOauthRequest,
+    authorization: String?,
     userInfo: String?,
   ): Response {
-    return sourceService.controllerInitiateOAuth(initiateOauthRequest, userInfo)
+    return sourceService.controllerInitiateOAuth(initiateOauthRequest, authorization, userInfo)
   }
 
   override fun listSources(
@@ -161,23 +169,25 @@ open class SourcesController(
     includeDeleted: Boolean?,
     limit: Int?,
     offset: Int?,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
 
     val safeWorkspaceIds = workspaceIds ?: emptyList()
     val sources: Any? =
-      TrackingHelper.callWithTracker({
+      trackingHelper.callWithTracker({
         sourceService.listSourcesForWorkspaces(
           safeWorkspaceIds,
           includeDeleted!!,
           limit!!,
           offset!!,
+          authorization,
           getLocalUserInfoIfNull(userInfo),
         )
       }, SOURCES_PATH, GET, userId)
 
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       SOURCES_PATH,
       GET,
       userId,
@@ -192,6 +202,7 @@ open class SourcesController(
   override fun patchSource(
     sourceId: UUID,
     sourcePatchRequest: SourcePatchRequest,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
@@ -199,11 +210,12 @@ open class SourcesController(
     removeSourceTypeNode(sourcePatchRequest)
 
     val sourceResponse: Any? =
-      TrackingHelper.callWithTracker(
+      trackingHelper.callWithTracker(
         {
           sourceService.partialUpdateSource(
             sourceId,
             sourcePatchRequest,
+            authorization,
             getLocalUserInfoIfNull(userInfo),
           )
         },
@@ -212,7 +224,7 @@ open class SourcesController(
         userId,
       )
 
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       SOURCES_WITH_ID_PATH,
       PATCH,
       userId,
@@ -226,6 +238,7 @@ open class SourcesController(
   override fun putSource(
     sourceId: UUID,
     sourcePutRequest: SourcePutRequest,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
@@ -233,11 +246,12 @@ open class SourcesController(
     removeSourceTypeNode(sourcePutRequest)
 
     val sourceResponse: Any? =
-      TrackingHelper.callWithTracker(
+      trackingHelper.callWithTracker(
         {
           sourceService.updateSource(
             sourceId,
             sourcePutRequest,
+            authorization,
             getLocalUserInfoIfNull(userInfo),
           )
         },
@@ -246,7 +260,7 @@ open class SourcesController(
         userId,
       )
 
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       SOURCES_WITH_ID_PATH,
       PUT,
       userId,

@@ -19,6 +19,7 @@ import io.airbyte.persistence.job.models.AttemptNormalizationStatus;
 import io.airbyte.persistence.job.models.AttemptWithJobInfo;
 import io.airbyte.persistence.job.models.Job;
 import io.airbyte.persistence.job.models.JobStatus;
+import io.airbyte.persistence.job.models.JobStatusSummary;
 import io.airbyte.persistence.job.models.JobWithStatusAndTimestamp;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -40,22 +41,6 @@ public interface JobPersistence {
   //
   // SIMPLE GETTERS
   //
-
-  /**
-   * Convenience POJO for various stats data structures.
-   *
-   * @param combinedStats stats for the job
-   * @param perStreamStats stats for each stream
-   */
-  record AttemptStats(SyncStats combinedStats, List<StreamSyncStats> perStreamStats) {}
-
-  /**
-   * Pair of the job id and attempt number.
-   *
-   * @param id job id
-   * @param attemptNumber attempt number
-   */
-  record JobAttemptPair(long id, int attemptNumber) {}
 
   /**
    * Retrieve the combined and per stream stats for a single attempt.
@@ -88,10 +73,6 @@ public interface JobPersistence {
 
   Job getJob(long jobId) throws IOException;
 
-  //
-  // JOB LIFECYCLE
-  //
-
   /**
    * Enqueue a new job. Its initial status will be pending.
    *
@@ -112,6 +93,10 @@ public interface JobPersistence {
    */
   void resetJob(long jobId) throws IOException;
 
+  //
+  // JOB LIFECYCLE
+  //
+
   /**
    * Set job status from current status to CANCELLED. If already in a terminal status, no op.
    *
@@ -127,10 +112,6 @@ public interface JobPersistence {
    * @throws IOException exception due to interaction with persistence
    */
   void failJob(long jobId) throws IOException;
-
-  //
-  // ATTEMPT LIFECYCLE
-  //
 
   /**
    * Create a new attempt for a job and return its attempt number. Throws
@@ -153,6 +134,10 @@ public interface JobPersistence {
    */
   void failAttempt(long jobId, int attemptNumber) throws IOException;
 
+  //
+  // ATTEMPT LIFECYCLE
+  //
+
   /**
    * Sets an attempt to SUCCEEDED. Also attempts to set the parent job to SUCCEEDED. The job's status
    * is changed regardless of what state it is in.
@@ -163,10 +148,6 @@ public interface JobPersistence {
    */
   void succeedAttempt(long jobId, int attemptNumber) throws IOException;
 
-  //
-  // END OF LIFECYCLE
-  //
-
   /**
    * Sets an attempt's temporal workflow id. Later used to cancel the workflow.
    */
@@ -176,6 +157,10 @@ public interface JobPersistence {
    * Retrieves an attempt's temporal workflow id. Used to cancel the workflow.
    */
   Optional<String> getAttemptTemporalWorkflowId(long jobId, int attemptNumber) throws IOException;
+
+  //
+  // END OF LIFECYCLE
+  //
 
   /**
    * Retrieves an Attempt from a given jobId and attemptNumber.
@@ -222,13 +207,26 @@ public interface JobPersistence {
   void writeAttemptSyncConfig(long jobId, int attemptNumber, AttemptSyncConfig attemptSyncConfig) throws IOException;
 
   /**
-   * Get count of jobs beloging to the specified connection.
+   * Get count of jobs beloging to the specified connection. This override allows passing several
+   * query filters.
    *
    * @param configTypes - the type of config, e.g. sync
    * @param connectionId - ID of the connection for which the job count should be retrieved
+   * @param status - status to filter by
+   * @param createdAtStart - minimum created at date to filter by
+   * @param createdAtEnd - maximum created at date to filter by
+   * @param updatedAtStart - minimum updated at date to filter by
+   * @param updatedAtEnd - maximum updated at date to filter by
    * @return count of jobs belonging to the specified connection
    */
-  Long getJobCount(final Set<ConfigType> configTypes, final String connectionId) throws IOException;
+  Long getJobCount(final Set<ConfigType> configTypes,
+                   final String connectionId,
+                   final JobStatus status,
+                   final OffsetDateTime createdAtStart,
+                   final OffsetDateTime createdAtEnd,
+                   final OffsetDateTime updatedAtStart,
+                   final OffsetDateTime updatedAtEnd)
+      throws IOException;
 
   /**
    * List jobs of a connection. Pageable.
@@ -316,6 +314,11 @@ public interface JobPersistence {
 
   List<Job> listJobsForConnectionWithStatuses(UUID connectionId, Set<JobConfig.ConfigType> configTypes, Set<JobStatus> statuses) throws IOException;
 
+  List<AttemptWithJobInfo> listAttemptsForConnectionAfterTimestamp(UUID connectionId,
+                                                                   ConfigType configType,
+                                                                   Instant attemptEndedAtTimestamp)
+      throws IOException;
+
   /**
    * List job statuses and timestamps for connection id.
    *
@@ -335,7 +338,7 @@ public interface JobPersistence {
 
   Optional<Job> getLastSyncJob(UUID connectionId) throws IOException;
 
-  List<Job> getLastSyncJobForConnections(final List<UUID> connectionIds) throws IOException;
+  List<JobStatusSummary> getLastSyncJobForConnections(final List<UUID> connectionIds) throws IOException;
 
   List<Job> getRunningSyncJobForConnections(final List<UUID> connectionIds) throws IOException;
 
@@ -353,7 +356,6 @@ public interface JobPersistence {
    * @throws IOException while interacting with the db.
    */
   List<AttemptWithJobInfo> listAttemptsWithJobInfo(ConfigType configType, Instant attemptEndedAtTimestamp, final int limit) throws IOException;
-  /// ARCHIVE
 
   /**
    * Returns the AirbyteVersion.
@@ -364,6 +366,7 @@ public interface JobPersistence {
    * Set the airbyte version.
    */
   void setVersion(String airbyteVersion) throws IOException;
+  /// ARCHIVE
 
   /**
    * Get the max supported Airbyte Protocol Version.
@@ -394,8 +397,6 @@ public interface JobPersistence {
    * Returns a deployment UUID.
    */
   Optional<UUID> getDeployment() throws IOException;
-  // a deployment references a setup of airbyte. it is created the first time the docker compose or
-  // K8s is ready.
 
   /**
    * Set deployment id. If one is already set, the new value is ignored.
@@ -406,7 +407,29 @@ public interface JobPersistence {
    * Purges job history while ensuring that the latest saved-state information is maintained.
    */
   void purgeJobHistory();
+  // a deployment references a setup of airbyte. it is created the first time the docker compose or
+  // K8s is ready.
 
   List<AttemptNormalizationStatus> getAttemptNormalizationStatusesForJob(final Long jobId) throws IOException;
+
+  /**
+   * Convenience POJO for various stats data structures.
+   *
+   * @param combinedStats stats for the job
+   * @param perStreamStats stats for each stream
+   */
+  record AttemptStats(SyncStats combinedStats, List<StreamSyncStats> perStreamStats) {
+
+  }
+
+  /**
+   * Pair of the job id and attempt number.
+   *
+   * @param id job id
+   * @param attemptNumber attempt number
+   */
+  record JobAttemptPair(long id, int attemptNumber) {
+
+  }
 
 }

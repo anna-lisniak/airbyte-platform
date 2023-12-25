@@ -1367,18 +1367,6 @@ public class ConfigRepository {
   }
 
   /**
-   * List source oauth parameters.
-   *
-   * @return oauth parameters
-   * @throws JsonValidationException if the workspace is or contains invalid json
-   * @throws IOException if there is an issue while interacting with db.
-   */
-  @Deprecated
-  public List<SourceOAuthParameter> listSourceOAuthParam() throws JsonValidationException, IOException {
-    return oAuthService.listSourceOAuthParam();
-  }
-
-  /**
    * Get destination oauth parameter.
    *
    * @param workspaceId workspace id
@@ -1402,18 +1390,6 @@ public class ConfigRepository {
   @Deprecated
   public void writeDestinationOAuthParam(final DestinationOAuthParameter destinationOAuthParameter) throws IOException {
     oAuthService.writeDestinationOAuthParam(destinationOAuthParameter);
-  }
-
-  /**
-   * List destination oauth params.
-   *
-   * @return list destination oauth params
-   * @throws JsonValidationException if the workspace is or contains invalid json
-   * @throws IOException if there is an issue while interacting with db.
-   */
-  @Deprecated
-  public List<DestinationOAuthParameter> listDestinationOAuthParam() throws JsonValidationException, IOException {
-    return oAuthService.listDestinationOAuthParam();
   }
 
   /**
@@ -2117,27 +2093,6 @@ public class ConfigRepository {
     return actorDefinitionService.getActorDefinitionVersion(actorDefinitionId, dockerImageTag);
   }
 
-  // /**
-  // * Get the actor definition version associated with an actor definition and a docker image tag.
-  // *
-  // * @param actorDefinitionId - actor definition id
-  // * @param dockerImageTag - docker image tag
-  // * @param ctx database context
-  // * @return actor definition version if there is an entry in the DB already for this version,
-  // * otherwise an empty optional
-  // * @throws IOException - you never know when you io
-  // */
-  // public Optional<ActorDefinitionVersion> getActorDefinitionVersion(final UUID actorDefinitionId,
-  // final String dockerImageTag, final DSLContext ctx) {
-  // return ctx.selectFrom(Tables.ACTOR_DEFINITION_VERSION)
-  // .where(Tables.ACTOR_DEFINITION_VERSION.ACTOR_DEFINITION_ID.eq(actorDefinitionId)
-  // .and(Tables.ACTOR_DEFINITION_VERSION.DOCKER_IMAGE_TAG.eq(dockerImageTag)))
-  // .fetch()
-  // .stream()
-  // .findFirst()
-  // .map(DbConverter::buildActorDefinitionVersion);
-  // }
-
   /**
    * Get an actor definition version by ID.
    *
@@ -2248,6 +2203,18 @@ public class ConfigRepository {
   public Set<Long> listEarlySyncJobs(final int freeUsageInterval, final int jobsFetchRange)
       throws IOException {
     return connectionService.listEarlySyncJobs(freeUsageInterval, jobsFetchRange);
+  }
+
+  @Deprecated
+  public Optional<SourceOAuthParameter> getSourceOAuthParameterOptional(final UUID workspaceId, final UUID sourceDefinitionId)
+      throws IOException {
+    return oAuthService.getSourceOAuthParameterOptional(workspaceId, sourceDefinitionId);
+  }
+
+  @Deprecated
+  public Optional<DestinationOAuthParameter> getDestinationOAuthParameterOptional(final UUID workspaceId, final UUID sourceDefinitionId)
+      throws IOException {
+    return oAuthService.getDestinationOAuthParameterOptional(workspaceId, sourceDefinitionId);
   }
 
 }

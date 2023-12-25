@@ -1,6 +1,5 @@
 import { createColumnHelper } from "@tanstack/react-table";
-import { useCallback, useMemo, useState } from "react";
-import React from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { FormattedMessage } from "react-intl";
 
 import { HeadTitle } from "components/common/HeadTitle";
@@ -11,9 +10,10 @@ import { Table } from "components/ui/Table";
 import { InfoTooltip } from "components/ui/Tooltip";
 
 import { BuilderProject } from "core/api";
+import { DestinationDefinitionRead, SourceDefinitionRead } from "core/api/types/AirbyteClient";
 import { Connector, ConnectorDefinition } from "core/domain/connector";
-import { DestinationDefinitionRead, SourceDefinitionRead } from "core/request/AirbyteClient";
 import { FeatureItem, useFeature } from "core/services/features";
+import { useIntent } from "core/utils/rbac";
 import { RoutePaths } from "pages/routePaths";
 
 import { ConnectorCell } from "./ConnectorCell";
@@ -66,7 +66,8 @@ const ConnectorsView: React.FC<ConnectorsViewProps> = ({
   connectorBuilderProjects,
 }) => {
   const [updatingAllConnectors, setUpdatingAllConnectors] = useState(false);
-  const allowUpdateConnectors = useFeature(FeatureItem.AllowUpdateConnectors);
+  const hasUpdateConnectorsPermissions = useIntent("UpdateConnectorVersions");
+  const allowUpdateConnectors = useFeature(FeatureItem.AllowUpdateConnectors) && hasUpdateConnectorsPermissions;
   const allowUploadCustomImage = useFeature(FeatureItem.AllowUploadCustomImage);
 
   const showVersionUpdateColumn = useCallback(

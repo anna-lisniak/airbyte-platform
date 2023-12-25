@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import io.airbyte.api.client.AirbyteApiClient;
 import io.airbyte.commons.converters.ConnectorConfigUpdater;
+import io.airbyte.commons.converters.ThreadedTimeTracker;
 import io.airbyte.commons.features.EnvVariableFeatureFlags;
 import io.airbyte.commons.protocol.AirbyteMessageMigrator;
 import io.airbyte.commons.protocol.AirbyteProtocolVersionedMigratorFactory;
@@ -35,10 +36,12 @@ import io.airbyte.workers.general.LimitedFatRecordSourceProcess;
 import io.airbyte.workers.general.LimitedIntegrationLauncher;
 import io.airbyte.workers.general.ReplicationFeatureFlagReader;
 import io.airbyte.workers.general.ReplicationWorker;
+import io.airbyte.workers.general.ReplicationWorkerHelper;
 import io.airbyte.workers.helper.AirbyteMessageDataExtractor;
 import io.airbyte.workers.internal.AirbyteDestination;
 import io.airbyte.workers.internal.AirbyteMapper;
 import io.airbyte.workers.internal.AirbyteSource;
+import io.airbyte.workers.internal.AnalyticsMessageTracker;
 import io.airbyte.workers.internal.DefaultAirbyteSource;
 import io.airbyte.workers.internal.DestinationTimeoutMonitor;
 import io.airbyte.workers.internal.FieldSelector;
@@ -54,6 +57,8 @@ import io.airbyte.workers.internal.bookkeeping.events.ReplicationAirbyteMessageE
 import io.airbyte.workers.internal.bookkeeping.events.ReplicationAirbyteMessageEventPublishingHelper;
 import io.airbyte.workers.internal.syncpersistence.SyncPersistence;
 import io.airbyte.workers.process.IntegrationLauncher;
+import io.airbyte.workers.workload.WorkloadIdGenerator;
+import io.airbyte.workload.api.client.generated.WorkloadApi;
 import io.micronaut.context.event.ApplicationEventListener;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -83,6 +88,7 @@ public abstract class ReplicationWorkerPerformanceTest {
                                                          final ReplicationFeatureFlagReader replicationFeatureFlagReader,
                                                          final AirbyteMessageDataExtractor airbyteMessageDataExtractor,
                                                          final ReplicationAirbyteMessageEventPublishingHelper messageEventPublishingHelper,
+                                                         final ReplicationWorkerHelper replicationWorkerHelper,
                                                          final DestinationTimeoutMonitor destinationTimeoutMonitor);
 
   /**
@@ -114,6 +120,7 @@ public abstract class ReplicationWorkerPerformanceTest {
     log.warn("availableProcessors {}", Runtime.getRuntime().availableProcessors());
     final var perDestination = new EmptyAirbyteDestination();
     final var messageTracker = mock(AirbyteMessageTracker.class);
+    final var analyticsMessageTracker = mock(AnalyticsMessageTracker.class);
     final var syncPersistence = mock(SyncPersistence.class);
     final var connectorConfigUpdater = mock(ConnectorConfigUpdater.class);
     final var metricReporter = new WorkerMetricReporter(new NotImplementedMetricClient(), "test-image:0.01");
@@ -123,7 +130,7 @@ public abstract class ReplicationWorkerPerformanceTest {
         CatalogHelpers.fieldsToJsonSchema(io.airbyte.protocol.models.Field.of("data", JsonSchemaType.STRING))));
     final var airbyteMessageDataExtractor = new AirbyteMessageDataExtractor();
     final var replicationFeatureFlagReader = mock(ReplicationFeatureFlagReader.class);
-    when(replicationFeatureFlagReader.readReplicationFeatureFlags()).thenReturn(new ReplicationFeatureFlags(false));
+    when(replicationFeatureFlagReader.readReplicationFeatureFlags()).thenReturn(new ReplicationFeatureFlags(false, 0, 4));
 
     // final IntegrationLauncher integrationLauncher = new LimitedIntegrationLauncher(new
     // LimitedThinRecordSourceProcess());
@@ -153,10 +160,11 @@ public abstract class ReplicationWorkerPerformanceTest {
         new AirbyteControlMessageEventListener(connectorConfigUpdater),
         new AirbyteStreamStatusMessageEventListener(streamStatusTracker));
     final DestinationTimeoutMonitor destinationTimeoutMonitor = new DestinationTimeoutMonitor(
-        featureFlagClient,
         workspaceID,
         UUID.randomUUID(),
-        new NotImplementedMetricClient());
+        new NotImplementedMetricClient(),
+        Duration.ofMinutes(120),
+        false);
     final ReplicationAirbyteMessageEventPublishingHelper replicationAirbyteMessageEventPublishingHelper =
         mock(ReplicationAirbyteMessageEventPublishingHelper.class);
     doAnswer((e) -> {
@@ -167,6 +175,11 @@ public abstract class ReplicationWorkerPerformanceTest {
 
     final boolean fieldSelectionEnabled = false;
     final FieldSelector fieldSelector = new FieldSelector(validator, metricReporter, fieldSelectionEnabled, false);
+
+    final ReplicationWorkerHelper replicationWorkerHelper =
+        new ReplicationWorkerHelper(airbyteMessageDataExtractor, fieldSelector, dstNamespaceMapper, messageTracker, syncPersistence,
+            replicationAirbyteMessageEventPublishingHelper, new ThreadedTimeTracker(), () -> {}, mock(WorkloadApi.class),
+            new WorkloadIdGenerator(), false, analyticsMessageTracker);
 
     final var worker = getReplicationWorker("1", 0,
         versionedAbSource,
@@ -180,6 +193,7 @@ public abstract class ReplicationWorkerPerformanceTest {
         replicationFeatureFlagReader,
         airbyteMessageDataExtractor,
         replicationAirbyteMessageEventPublishingHelper,
+        replicationWorkerHelper,
         destinationTimeoutMonitor);
     final AtomicReference<ReplicationOutput> output = new AtomicReference<>();
     final Thread workerThread = new Thread(() -> {

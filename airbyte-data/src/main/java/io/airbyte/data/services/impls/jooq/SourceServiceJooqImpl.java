@@ -6,7 +6,6 @@ package io.airbyte.data.services.impls.jooq;
 
 import static io.airbyte.db.instance.configs.jooq.generated.Tables.ACTOR;
 import static io.airbyte.db.instance.configs.jooq.generated.Tables.ACTOR_DEFINITION;
-import static io.airbyte.db.instance.configs.jooq.generated.Tables.ACTOR_DEFINITION_VERSION;
 import static io.airbyte.db.instance.configs.jooq.generated.Tables.ACTOR_DEFINITION_WORKSPACE_GRANT;
 import static io.airbyte.db.instance.configs.jooq.generated.Tables.CONNECTION;
 import static io.airbyte.db.instance.configs.jooq.generated.Tables.CONNECTION_OPERATION;
@@ -18,19 +17,24 @@ import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.select;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.airbyte.commons.enums.Enums;
 import io.airbyte.commons.json.Jsons;
-import io.airbyte.commons.version.Version;
 import io.airbyte.config.ActorDefinitionBreakingChange;
 import io.airbyte.config.ActorDefinitionVersion;
 import io.airbyte.config.ConfigSchema;
 import io.airbyte.config.ConfigWithMetadata;
 import io.airbyte.config.ScopeType;
+import io.airbyte.config.SecretPersistenceConfig;
 import io.airbyte.config.SourceConnection;
 import io.airbyte.config.StandardSourceDefinition;
 import io.airbyte.config.StandardSync;
 import io.airbyte.config.helpers.ScheduleHelpers;
+import io.airbyte.config.secrets.SecretsRepositoryReader;
+import io.airbyte.config.secrets.SecretsRepositoryWriter;
+import io.airbyte.config.secrets.persistence.RuntimeSecretPersistence;
 import io.airbyte.data.exceptions.ConfigNotFoundException;
+import io.airbyte.data.services.SecretPersistenceConfigService;
 import io.airbyte.data.services.SourceService;
 import io.airbyte.data.services.shared.ResourcesQueryPaginated;
 import io.airbyte.data.services.shared.SourceAndDefinition;
@@ -38,11 +42,13 @@ import io.airbyte.db.Database;
 import io.airbyte.db.ExceptionWrappingDatabase;
 import io.airbyte.db.instance.configs.jooq.generated.Tables;
 import io.airbyte.db.instance.configs.jooq.generated.enums.ActorType;
-import io.airbyte.db.instance.configs.jooq.generated.enums.ReleaseStage;
 import io.airbyte.db.instance.configs.jooq.generated.enums.SourceType;
-import io.airbyte.db.instance.configs.jooq.generated.enums.SupportLevel;
 import io.airbyte.db.instance.configs.jooq.generated.tables.records.ActorDefinitionWorkspaceGrantRecord;
 import io.airbyte.db.instance.configs.jooq.generated.tables.records.NotificationConfigurationRecord;
+import io.airbyte.featureflag.FeatureFlagClient;
+import io.airbyte.featureflag.Organization;
+import io.airbyte.featureflag.UseRuntimeSecretPersistence;
+import io.airbyte.protocol.models.ConnectorSpecification;
 import io.airbyte.validation.json.JsonValidationException;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
@@ -54,12 +60,12 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -75,16 +81,29 @@ import org.jooq.SelectJoinStep;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
 
+@Slf4j
 @Singleton
 public class SourceServiceJooqImpl implements SourceService {
 
   public static final String PRIMARY_KEY = "id";
 
   private final ExceptionWrappingDatabase database;
+  private final FeatureFlagClient featureFlagClient;
+  private final SecretsRepositoryReader secretRepositoryReader;
+  private final SecretsRepositoryWriter secretsRepositoryWriter;
+  private final SecretPersistenceConfigService secretPersistenceConfigService;
   private final static long heartbeatMaxSecondBetweenMessage = 3600L;
 
-  public SourceServiceJooqImpl(@Named("configDatabase") Database database) {
+  public SourceServiceJooqImpl(@Named("configDatabase") final Database database,
+                               final FeatureFlagClient featureFlagClient,
+                               final SecretsRepositoryReader secretsRepositoryReader,
+                               final SecretsRepositoryWriter secretsRepositoryWriter,
+                               final SecretPersistenceConfigService secretPersistenceConfigService) {
     this.database = new ExceptionWrappingDatabase(database);
+    this.featureFlagClient = featureFlagClient;
+    this.secretRepositoryReader = secretsRepositoryReader;
+    this.secretsRepositoryWriter = secretsRepositoryWriter;
+    this.secretPersistenceConfigService = secretPersistenceConfigService;
   }
 
   /**
@@ -97,7 +116,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws ConfigNotFoundException - throws if no source with that id can be found.
    */
   @Override
-  public StandardSourceDefinition getStandardSourceDefinition(UUID sourceDefinitionId)
+  public StandardSourceDefinition getStandardSourceDefinition(final UUID sourceDefinitionId)
       throws JsonValidationException, IOException, ConfigNotFoundException {
     return sourceDefQuery(Optional.of(sourceDefinitionId), true)
         .findFirst()
@@ -111,7 +130,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @return source definition
    */
   @Override
-  public StandardSourceDefinition getSourceDefinitionFromSource(UUID sourceId) {
+  public StandardSourceDefinition getSourceDefinitionFromSource(final UUID sourceId) {
     try {
       final SourceConnection source = getSourceConnection(sourceId);
       return getStandardSourceDefinition(source.getSourceDefinitionId());
@@ -127,7 +146,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @return source definition
    */
   @Override
-  public StandardSourceDefinition getSourceDefinitionFromConnection(UUID connectionId) {
+  public StandardSourceDefinition getSourceDefinitionFromConnection(final UUID connectionId) {
     try {
       final StandardSync sync = getStandardSyncWithMetadata(connectionId).getConfig();
       return getSourceDefinitionFromSource(sync.getSourceId());
@@ -144,7 +163,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - you never know when you IO
    */
   @Override
-  public List<StandardSourceDefinition> listStandardSourceDefinitions(boolean includeTombstone)
+  public List<StandardSourceDefinition> listStandardSourceDefinitions(final boolean includeTombstone)
       throws IOException {
     return sourceDefQuery(Optional.empty(), includeTombstone).toList();
   }
@@ -157,7 +176,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - you never know when you IO
    */
   @Override
-  public List<StandardSourceDefinition> listPublicSourceDefinitions(boolean includeTombstone)
+  public List<StandardSourceDefinition> listPublicSourceDefinitions(final boolean includeTombstone)
       throws IOException {
     return listStandardActorDefinitions(
         ActorType.source,
@@ -175,8 +194,8 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - you never know when you IO
    */
   @Override
-  public List<StandardSourceDefinition> listGrantedSourceDefinitions(UUID workspaceId,
-                                                                     boolean includeTombstones)
+  public List<StandardSourceDefinition> listGrantedSourceDefinitions(final UUID workspaceId,
+                                                                     final boolean includeTombstones)
       throws IOException {
     return listActorDefinitionsJoinedWithGrants(
         workspaceId,
@@ -197,8 +216,8 @@ public class SourceServiceJooqImpl implements SourceService {
    */
   @Override
   public List<Entry<StandardSourceDefinition, Boolean>> listGrantableSourceDefinitions(
-                                                                                       UUID workspaceId,
-                                                                                       boolean includeTombstones)
+                                                                                       final UUID workspaceId,
+                                                                                       final boolean includeTombstones)
       throws IOException {
     return listActorDefinitionsJoinedWithGrants(
         workspaceId,
@@ -219,7 +238,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - you never know when you IO
    */
   @Override
-  public void updateStandardSourceDefinition(StandardSourceDefinition sourceDefinition)
+  public void updateStandardSourceDefinition(final StandardSourceDefinition sourceDefinition)
       throws IOException, JsonValidationException, ConfigNotFoundException {
     // Check existence before updating
     // TODO: split out write and update methods so that we don't need explicit checking
@@ -242,7 +261,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws ConfigNotFoundException - throws if no source with that id can be found.
    */
   @Override
-  public SourceConnection getSourceConnection(UUID sourceId)
+  public SourceConnection getSourceConnection(final UUID sourceId)
       throws JsonValidationException, ConfigNotFoundException, IOException {
     return listSourceQuery(Optional.of(sourceId))
         .findFirst()
@@ -260,7 +279,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - you never know when you IO
    */
   @Override
-  public void writeSourceConnectionNoSecrets(SourceConnection partialSource) throws IOException {
+  public void writeSourceConnectionNoSecrets(final SourceConnection partialSource) throws IOException {
     database.transaction(ctx -> {
       writeSourceConnection(Collections.singletonList(partialSource), ctx);
       return null;
@@ -277,14 +296,13 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - you never know when you IO
    */
   @Override
-  public boolean deleteSource(UUID sourceId)
+  public boolean deleteSource(final UUID sourceId)
       throws JsonValidationException, ConfigNotFoundException, IOException {
     return deleteById(ACTOR, sourceId);
   }
 
   /**
-   * Returns all sources in the database. Does not contain secrets. To hydrate with secrets see
-   * { @link SecretsRepositoryReader#listSourceConnectionWithSecrets() }.
+   * Returns all sources in the database. Does not contain secrets.
    *
    * @return sources
    * @throws IOException - you never know when you IO
@@ -302,7 +320,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - you never know when you IO
    */
   @Override
-  public List<SourceConnection> listWorkspaceSourceConnection(UUID workspaceId) throws IOException {
+  public List<SourceConnection> listWorkspaceSourceConnection(final UUID workspaceId) throws IOException {
     final Result<Record> result = database.query(ctx -> ctx.select(asterisk())
         .from(ACTOR)
         .where(ACTOR.ACTOR_TYPE.eq(ActorType.source))
@@ -320,7 +338,7 @@ public class SourceServiceJooqImpl implements SourceService {
    */
   @Override
   public List<SourceConnection> listWorkspacesSourceConnections(
-                                                                ResourcesQueryPaginated resourcesQueryPaginated)
+                                                                final ResourcesQueryPaginated resourcesQueryPaginated)
       throws IOException {
     final Result<Record> result = database.query(ctx -> ctx.select(asterisk())
         .from(ACTOR)
@@ -341,7 +359,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - exception while interacting with the db
    */
   @Override
-  public List<SourceConnection> listSourcesForDefinition(UUID definitionId) throws IOException {
+  public List<SourceConnection> listSourcesForDefinition(final UUID definitionId) throws IOException {
     final Result<Record> result = database.query(ctx -> ctx.select(asterisk())
         .from(ACTOR)
         .where(ACTOR.ACTOR_TYPE.eq(ActorType.source))
@@ -358,7 +376,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException if there is an issue while interacting with db.
    */
   @Override
-  public List<SourceAndDefinition> getSourceAndDefinitionsFromSourceIds(List<UUID> sourceIds)
+  public List<SourceAndDefinition> getSourceAndDefinitionsFromSourceIds(final List<UUID> sourceIds)
       throws IOException {
     final Result<Record> records = database.query(ctx -> ctx
         .select(ACTOR.asterisk(), ACTOR_DEFINITION.asterisk())
@@ -391,9 +409,9 @@ public class SourceServiceJooqImpl implements SourceService {
    * @throws IOException - you never know when you IO
    */
   @Override
-  public void writeConnectorMetadata(StandardSourceDefinition sourceDefinition,
-                                     ActorDefinitionVersion actorDefinitionVersion,
-                                     List<ActorDefinitionBreakingChange> breakingChangesForDefinition)
+  public void writeConnectorMetadata(final StandardSourceDefinition sourceDefinition,
+                                     final ActorDefinitionVersion actorDefinitionVersion,
+                                     final List<ActorDefinitionBreakingChange> breakingChangesForDefinition)
       throws IOException {
     database.transaction(ctx -> {
       writeConnectorMetadata(sourceDefinition, actorDefinitionVersion, breakingChangesForDefinition, ctx);
@@ -402,10 +420,10 @@ public class SourceServiceJooqImpl implements SourceService {
   }
 
   @Override
-  public void writeCustomConnectorMetadata(StandardSourceDefinition sourceDefinition,
-                                           ActorDefinitionVersion defaultVersion,
-                                           UUID scopeId,
-                                           ScopeType scopeType)
+  public void writeCustomConnectorMetadata(final StandardSourceDefinition sourceDefinition,
+                                           final ActorDefinitionVersion defaultVersion,
+                                           final UUID scopeId,
+                                           final ScopeType scopeType)
       throws IOException {
     database.transaction(ctx -> {
       writeConnectorMetadata(sourceDefinition, defaultVersion, List.of(), ctx);
@@ -424,7 +442,7 @@ public class SourceServiceJooqImpl implements SourceService {
    */
   @Override
   public List<SourceConnection> listSourcesWithVersionIds(
-                                                          List<UUID> actorDefinitionVersionIds)
+                                                          final List<UUID> actorDefinitionVersionIds)
       throws IOException {
     final Result<Record> result = database.query(ctx -> ctx.select(asterisk())
         .from(ACTOR)
@@ -456,7 +474,7 @@ public class SourceServiceJooqImpl implements SourceService {
                                       final DSLContext ctx) {
     writeStandardSourceDefinition(Collections.singletonList(sourceDefinition), ctx);
     writeActorDefinitionBreakingChanges(breakingChangesForDefinition, ctx);
-    setActorDefinitionVersionForTagAsDefault(actorDefinitionVersion, breakingChangesForDefinition, ctx);
+    ActorDefinitionVersionJooqHelper.setActorDefinitionVersionForTagAsDefault(actorDefinitionVersion, breakingChangesForDefinition, ctx);
   }
 
   /**
@@ -482,176 +500,15 @@ public class SourceServiceJooqImpl implements SourceService {
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.UPGRADE_DEADLINE, LocalDate.parse(breakingChange.getUpgradeDeadline()))
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.MESSAGE, breakingChange.getMessage())
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.MIGRATION_DOCUMENTATION_URL, breakingChange.getMigrationDocumentationUrl())
+        .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.SCOPED_IMPACT, JSONB.valueOf(Jsons.serialize(breakingChange.getScopedImpact())))
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.CREATED_AT, timestamp)
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.UPDATED_AT, timestamp)
         .onConflict(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.ACTOR_DEFINITION_ID, Tables.ACTOR_DEFINITION_BREAKING_CHANGE.VERSION).doUpdate()
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.UPGRADE_DEADLINE, LocalDate.parse(breakingChange.getUpgradeDeadline()))
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.MESSAGE, breakingChange.getMessage())
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.MIGRATION_DOCUMENTATION_URL, breakingChange.getMigrationDocumentationUrl())
+        .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.SCOPED_IMPACT, JSONB.valueOf(Jsons.serialize(breakingChange.getScopedImpact())))
         .set(Tables.ACTOR_DEFINITION_BREAKING_CHANGE.UPDATED_AT, timestamp);
-  }
-
-  /**
-   * Set the ActorDefinitionVersion for a given tag as the default version for the associated actor
-   * definition. Check docker image tag on the new ADV; if an ADV exists for that tag, set the
-   * existing ADV for the tag as the default. Otherwise, insert the new ADV and set it as the default.
-   *
-   * @param actorDefinitionVersion new actor definition version
-   * @throws IOException - you never know when you IO
-   */
-  private void setActorDefinitionVersionForTagAsDefault(final ActorDefinitionVersion actorDefinitionVersion,
-                                                        final List<ActorDefinitionBreakingChange> breakingChangesForDefinition,
-                                                        final DSLContext ctx) {
-    final Optional<ActorDefinitionVersion> existingADV =
-        getActorDefinitionVersion(actorDefinitionVersion.getActorDefinitionId(), actorDefinitionVersion.getDockerImageTag(), ctx);
-
-    if (existingADV.isPresent()) {
-      setActorDefinitionVersionAsDefaultVersion(existingADV.get(), breakingChangesForDefinition, ctx);
-    } else {
-      final ActorDefinitionVersion insertedADV = writeActorDefinitionVersion(actorDefinitionVersion, ctx);
-      setActorDefinitionVersionAsDefaultVersion(insertedADV, breakingChangesForDefinition, ctx);
-    }
-  }
-
-  private ActorDefinitionVersion writeActorDefinitionVersion(final ActorDefinitionVersion actorDefinitionVersion, final DSLContext ctx) {
-    final OffsetDateTime timestamp = OffsetDateTime.now();
-    // Generate a new UUID if one is not provided. Passing an ID is useful for mocks.
-    final UUID versionId = actorDefinitionVersion.getVersionId() != null ? actorDefinitionVersion.getVersionId() : UUID.randomUUID();
-
-    ctx.insertInto(Tables.ACTOR_DEFINITION_VERSION)
-        .set(Tables.ACTOR_DEFINITION_VERSION.ID, versionId)
-        .set(ACTOR_DEFINITION_VERSION.CREATED_AT, timestamp)
-        .set(ACTOR_DEFINITION_VERSION.UPDATED_AT, timestamp)
-        .set(Tables.ACTOR_DEFINITION_VERSION.ACTOR_DEFINITION_ID, actorDefinitionVersion.getActorDefinitionId())
-        .set(Tables.ACTOR_DEFINITION_VERSION.DOCKER_REPOSITORY, actorDefinitionVersion.getDockerRepository())
-        .set(Tables.ACTOR_DEFINITION_VERSION.DOCKER_IMAGE_TAG, actorDefinitionVersion.getDockerImageTag())
-        .set(Tables.ACTOR_DEFINITION_VERSION.SPEC, JSONB.valueOf(Jsons.serialize(actorDefinitionVersion.getSpec())))
-        .set(Tables.ACTOR_DEFINITION_VERSION.DOCUMENTATION_URL, actorDefinitionVersion.getDocumentationUrl())
-        .set(Tables.ACTOR_DEFINITION_VERSION.PROTOCOL_VERSION, actorDefinitionVersion.getProtocolVersion())
-        .set(Tables.ACTOR_DEFINITION_VERSION.SUPPORT_LEVEL, actorDefinitionVersion.getSupportLevel() == null ? null
-            : Enums.toEnum(actorDefinitionVersion.getSupportLevel().value(),
-                SupportLevel.class).orElseThrow())
-        .set(Tables.ACTOR_DEFINITION_VERSION.RELEASE_STAGE, actorDefinitionVersion.getReleaseStage() == null ? null
-            : Enums.toEnum(actorDefinitionVersion.getReleaseStage().value(),
-                ReleaseStage.class).orElseThrow())
-        .set(Tables.ACTOR_DEFINITION_VERSION.RELEASE_DATE, actorDefinitionVersion.getReleaseDate() == null ? null
-            : LocalDate.parse(actorDefinitionVersion.getReleaseDate()))
-        .set(Tables.ACTOR_DEFINITION_VERSION.NORMALIZATION_REPOSITORY,
-            Objects.nonNull(actorDefinitionVersion.getNormalizationConfig())
-                ? actorDefinitionVersion.getNormalizationConfig().getNormalizationRepository()
-                : null)
-        .set(Tables.ACTOR_DEFINITION_VERSION.NORMALIZATION_TAG,
-            Objects.nonNull(actorDefinitionVersion.getNormalizationConfig())
-                ? actorDefinitionVersion.getNormalizationConfig().getNormalizationTag()
-                : null)
-        .set(Tables.ACTOR_DEFINITION_VERSION.SUPPORTS_DBT, actorDefinitionVersion.getSupportsDbt())
-        .set(Tables.ACTOR_DEFINITION_VERSION.NORMALIZATION_INTEGRATION_TYPE,
-            Objects.nonNull(actorDefinitionVersion.getNormalizationConfig())
-                ? actorDefinitionVersion.getNormalizationConfig().getNormalizationIntegrationType()
-                : null)
-        .set(Tables.ACTOR_DEFINITION_VERSION.ALLOWED_HOSTS, actorDefinitionVersion.getAllowedHosts() == null ? null
-            : JSONB.valueOf(Jsons.serialize(actorDefinitionVersion.getAllowedHosts())))
-        .set(Tables.ACTOR_DEFINITION_VERSION.SUGGESTED_STREAMS,
-            actorDefinitionVersion.getSuggestedStreams() == null ? null
-                : JSONB.valueOf(Jsons.serialize(actorDefinitionVersion.getSuggestedStreams())))
-        .set(Tables.ACTOR_DEFINITION_VERSION.SUPPORT_STATE,
-            Enums.toEnum(actorDefinitionVersion.getSupportState().value(), io.airbyte.db.instance.configs.jooq.generated.enums.SupportState.class)
-                .orElseThrow())
-        .execute();
-
-    return actorDefinitionVersion.withVersionId(versionId);
-  }
-
-  private void setActorDefinitionVersionAsDefaultVersion(final ActorDefinitionVersion actorDefinitionVersion,
-                                                         final List<ActorDefinitionBreakingChange> breakingChangesForDefinition,
-                                                         final DSLContext ctx) {
-    if (actorDefinitionVersion.getVersionId() == null) {
-      throw new RuntimeException("Can't set an actorDefinitionVersion as default without it having a versionId.");
-    }
-
-    final Optional<ActorDefinitionVersion> currentDefaultVersion =
-        getDefaultVersionForActorDefinitionIdOptional(actorDefinitionVersion.getActorDefinitionId(), ctx);
-
-    currentDefaultVersion
-        .ifPresent(currentDefault -> {
-          final boolean shouldUpdateActorDefaultVersions = shouldUpdateActorsDefaultVersionsDuringUpgrade(
-              currentDefault.getDockerImageTag(), actorDefinitionVersion.getDockerImageTag(), breakingChangesForDefinition);
-          if (shouldUpdateActorDefaultVersions) {
-            updateDefaultVersionIdForActorsOnVersion(currentDefault.getVersionId(), actorDefinitionVersion.getVersionId(), ctx);
-          }
-        });
-
-    updateActorDefinitionDefaultVersionId(actorDefinitionVersion.getActorDefinitionId(), actorDefinitionVersion.getVersionId(), ctx);
-  }
-
-  private void updateActorDefinitionDefaultVersionId(final UUID actorDefinitionId, final UUID versionId, final DSLContext ctx) {
-    ctx.update(ACTOR_DEFINITION)
-        .set(ACTOR_DEFINITION.UPDATED_AT, OffsetDateTime.now())
-        .set(ACTOR_DEFINITION.DEFAULT_VERSION_ID, versionId)
-        .where(ACTOR_DEFINITION.ID.eq(actorDefinitionId))
-        .execute();
-  }
-
-  private void updateDefaultVersionIdForActorsOnVersion(final UUID previousDefaultVersionId, final UUID newDefaultVersionId, final DSLContext ctx) {
-    ctx.update(ACTOR)
-        .set(ACTOR.UPDATED_AT, OffsetDateTime.now())
-        .set(ACTOR.DEFAULT_VERSION_ID, newDefaultVersionId)
-        .where(ACTOR.DEFAULT_VERSION_ID.eq(previousDefaultVersionId))
-        .execute();
-  }
-
-  /**
-   * Given a current version and a version to upgrade to, and a list of breaking changes, determine
-   * whether actors' default versions should be updated during upgrade. This logic is used to avoid
-   * applying a breaking change to a user's actor.
-   *
-   * @param currentDockerImageTag version to upgrade from
-   * @param dockerImageTagForUpgrade version to upgrade to
-   * @param breakingChangesForDef a list of breaking changes to check
-   * @return whether actors' default versions should be updated during upgrade
-   */
-  public static boolean shouldUpdateActorsDefaultVersionsDuringUpgrade(final String currentDockerImageTag,
-                                                                       final String dockerImageTagForUpgrade,
-                                                                       final List<ActorDefinitionBreakingChange> breakingChangesForDef) {
-    if (breakingChangesForDef.isEmpty()) {
-      // If there aren't breaking changes, early exit in order to avoid trying to parse versions.
-      // This is helpful for custom connectors or local dev images for connectors that don't have
-      // breaking changes.
-      return true;
-    }
-
-    final Version currentVersion = new Version(currentDockerImageTag);
-    final Version versionToUpgradeTo = new Version(dockerImageTagForUpgrade);
-
-    if (versionToUpgradeTo.lessThanOrEqualTo(currentVersion)) {
-      // When downgrading, we don't take into account breaking changes/hold actors back.
-      return true;
-    }
-
-    final boolean upgradingOverABreakingChange = breakingChangesForDef.stream().anyMatch(
-        breakingChange -> currentVersion.lessThan(breakingChange.getVersion()) && versionToUpgradeTo.greaterThanOrEqualTo(
-            breakingChange.getVersion()));
-    return !upgradingOverABreakingChange;
-  }
-
-  /**
-   * Get the actor definition version associated with an actor definition and a docker image tag.
-   *
-   * @param actorDefinitionId - actor definition id
-   * @param dockerImageTag - docker image tag
-   * @param ctx database context
-   * @return actor definition version if there is an entry in the DB already for this version,
-   *         otherwise an empty optional
-   * @throws IOException - you never know when you io
-   */
-  public Optional<ActorDefinitionVersion> getActorDefinitionVersion(final UUID actorDefinitionId, final String dockerImageTag, final DSLContext ctx) {
-    return ctx.selectFrom(Tables.ACTOR_DEFINITION_VERSION)
-        .where(Tables.ACTOR_DEFINITION_VERSION.ACTOR_DEFINITION_ID.eq(actorDefinitionId)
-            .and(Tables.ACTOR_DEFINITION_VERSION.DOCKER_IMAGE_TAG.eq(dockerImageTag)))
-        .fetch()
-        .stream()
-        .findFirst()
-        .map(DbConverter::buildActorDefinitionVersion);
   }
 
   private ConfigWithMetadata<StandardSync> getStandardSyncWithMetadata(final UUID connectionId) throws IOException, ConfigNotFoundException {
@@ -793,7 +650,7 @@ public class SourceServiceJooqImpl implements SourceService {
         .fetch());
   }
 
-  private Optional<UUID> getOrganizationIdFromWorkspaceId(final UUID scopeId) throws IOException {
+  public Optional<UUID> getOrganizationIdFromWorkspaceId(final UUID scopeId) throws IOException {
     final Optional<Record1<UUID>> optionalRecord = database.query(ctx -> ctx.select(WORKSPACE.ORGANIZATION_ID).from(WORKSPACE)
         .where(WORKSPACE.ID.eq(scopeId)).fetchOptional());
     return optionalRecord.map(Record1::value1);
@@ -911,14 +768,7 @@ public class SourceServiceJooqImpl implements SourceService {
    * but not yet set its default version.
    */
   private Optional<ActorDefinitionVersion> getDefaultVersionForActorDefinitionIdOptional(final UUID actorDefinitionId, final DSLContext ctx) {
-    return ctx.select(Tables.ACTOR_DEFINITION_VERSION.asterisk())
-        .from(ACTOR_DEFINITION)
-        .join(ACTOR_DEFINITION_VERSION).on(Tables.ACTOR_DEFINITION_VERSION.ID.eq(Tables.ACTOR_DEFINITION.DEFAULT_VERSION_ID))
-        .where(ACTOR_DEFINITION.ID.eq(actorDefinitionId))
-        .fetch()
-        .stream()
-        .findFirst()
-        .map(DbConverter::buildActorDefinitionVersion);
+    return ActorDefinitionVersionJooqHelper.getDefaultVersionForActorDefinitionIdOptional(actorDefinitionId, ctx);
   }
 
   /**
@@ -952,6 +802,83 @@ public class SourceServiceJooqImpl implements SourceService {
     } else {
       return tombstoneField.eq(false);
     }
+  }
+
+  /**
+   * Get source with secrets.
+   *
+   * @param sourceId source id
+   * @return source with secrets
+   */
+  @Override
+  public SourceConnection getSourceConnectionWithSecrets(final UUID sourceId) throws JsonValidationException, ConfigNotFoundException, IOException {
+    final SourceConnection source = getSourceConnection(sourceId);
+    final Optional<UUID> organizationId = getOrganizationIdFromWorkspaceId(source.getWorkspaceId());
+    final JsonNode hydratedConfig;
+    if (organizationId.isPresent() && featureFlagClient.boolVariation(UseRuntimeSecretPersistence.INSTANCE, new Organization(organizationId.get()))) {
+      final SecretPersistenceConfig secretPersistenceConfig =
+          secretPersistenceConfigService.getSecretPersistenceConfig(ScopeType.ORGANIZATION, organizationId.get());
+      hydratedConfig = secretRepositoryReader.hydrateConfigFromRuntimeSecretPersistence(source.getConfiguration(),
+          new RuntimeSecretPersistence(secretPersistenceConfig));
+    } else {
+      hydratedConfig = secretRepositoryReader.hydrateConfigFromDefaultSecretPersistence(source.getConfiguration());
+    }
+    return Jsons.clone(source).withConfiguration(hydratedConfig);
+  }
+
+  /**
+   * Write a source with its secrets to the appropriate persistence. Secrets go to secrets store and
+   * the rest of the object (with pointers to the secrets store) get saved in the db.
+   *
+   * @param source to write
+   * @param connectorSpecification spec for the destination
+   * @throws JsonValidationException if the workspace is or contains invalid json
+   * @throws IOException if there is an issue while interacting with the secrets store or db.
+   */
+  @Override
+  public void writeSourceConnectionWithSecrets(
+                                               final SourceConnection source,
+                                               final ConnectorSpecification connectorSpecification)
+      throws JsonValidationException, IOException, ConfigNotFoundException {
+    final Optional<JsonNode> previousSourceConnection =
+        getSourceIfExists(source.getSourceId()).map(SourceConnection::getConfiguration);
+
+    // strip secrets
+    final Optional<UUID> organizationId = getOrganizationIdFromWorkspaceId(source.getWorkspaceId());
+    final JsonNode partialConfig;
+    if (organizationId.isPresent() && featureFlagClient.boolVariation(UseRuntimeSecretPersistence.INSTANCE, new Organization(organizationId.get()))) {
+      final SecretPersistenceConfig secretPersistenceConfig =
+          secretPersistenceConfigService.getSecretPersistenceConfig(ScopeType.ORGANIZATION, organizationId.get());
+      partialConfig = secretsRepositoryWriter.statefulUpdateSecretsToRuntimeSecretPersistence(
+          source.getWorkspaceId(),
+          previousSourceConnection,
+          source.getConfiguration(),
+          connectorSpecification.getConnectionSpecification(),
+          validate(source),
+          new RuntimeSecretPersistence(secretPersistenceConfig));
+    } else {
+      partialConfig = secretsRepositoryWriter.statefulUpdateSecretsToDefaultSecretPersistence(
+          source.getWorkspaceId(),
+          previousSourceConnection,
+          source.getConfiguration(),
+          connectorSpecification.getConnectionSpecification(),
+          validate(source));
+    }
+    final SourceConnection partialSource = Jsons.clone(source).withConfiguration(partialConfig);
+    writeSourceConnectionNoSecrets(partialSource);
+  }
+
+  public Optional<SourceConnection> getSourceIfExists(final UUID sourceId) {
+    try {
+      return Optional.of(getSourceConnection(sourceId));
+    } catch (final ConfigNotFoundException | JsonValidationException | IOException e) {
+      log.warn("Unable to find source with ID {}", sourceId);
+      return Optional.empty();
+    }
+  }
+
+  private boolean validate(final SourceConnection source) {
+    return source.getTombstone() == null || !source.getTombstone();
   }
 
 }

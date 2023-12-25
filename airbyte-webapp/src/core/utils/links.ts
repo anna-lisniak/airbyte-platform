@@ -30,12 +30,10 @@ export const links = {
   contactSales: "https://airbyte.com/talk-to-sales",
   webpageLink: "https://airbyte.com",
   webhookVideoGuideLink: "https://www.youtube.com/watch?v=NjYm8F-KiFc",
-  webhookGuideLink: `${BASE_DOCS_LINK}/operator-guides/configuring-sync-notifications/`,
   cronReferenceLink: "http://www.quartz-scheduler.org/documentation/quartz-2.3.0/tutorials/crontrigger.html",
   cloudAllowlistIPsLink: `${BASE_DOCS_LINK}/cloud/getting-started-with-airbyte-cloud/#allowlist-ip-addresses`,
   dataResidencySurvey: "https://forms.gle/Dr7MPTdt9k3xTinL8",
-  connectionDataResidency:
-    "https://docs.airbyte.com/cloud/managing-airbyte-cloud/#choose-the-data-residency-for-a-connection",
+  connectionDataResidency: `${BASE_DOCS_LINK}/cloud/managing-airbyte-cloud/manage-data-residency#choose-the-data-residency-for-a-connection`,
   lowCodeYamlDescription: `${BASE_DOCS_LINK}/connector-development/config-based/understanding-the-yaml-file/yaml-overview`,
   upcomingFeaturesPage: "https://embedded.airbyte.com/upcoming-releases",
   stripeCustomerPortal: "https://billing.stripe.com/p/login/5kAbJs2Gy83H2YwdQQ",
@@ -45,14 +43,14 @@ export const links = {
   connectorBuilderPagination: `${BASE_DOCS_LINK}/connector-development/connector-builder-ui/pagination`,
   connectorBuilderIncrementalSync: `${BASE_DOCS_LINK}/connector-development/connector-builder-ui/incremental-sync`,
   connectorBuilderErrorHandler: `${BASE_DOCS_LINK}/connector-development/connector-builder-ui/error-handling`,
-  connectorBuilderPartitioning: `${BASE_DOCS_LINK}/connector-development/connector-builder-ui/partitioning`,
+  connectorBuilderParentStream: `${BASE_DOCS_LINK}/connector-development/connector-builder-ui/partitioning#parent-stream`,
+  connectorBuilderParameterizedRequests: `${BASE_DOCS_LINK}/connector-development/connector-builder-ui/partitioning#parameterized-requests`,
   connectorBuilderTransformations: `${BASE_DOCS_LINK}/connector-development/connector-builder-ui/record-processing#transformations`,
   connectorBuilderTutorial: `${BASE_DOCS_LINK}/connector-development/connector-builder-ui/tutorial`,
   interpolationVariableDocs: `${BASE_DOCS_LINK}/connector-development/config-based/understanding-the-yaml-file/reference`,
   interpolationMacroDocs: `${BASE_DOCS_LINK}/connector-development/config-based/understanding-the-yaml-file/reference#macros`,
   creditDescription: "https://airbyte.com/pricing#what-is-a-credit",
   usingCustomConnectors: `${BASE_DOCS_LINK}/operator-guides/using-custom-connectors/`,
-  githubContent: "https://raw.githubusercontent.com/airbytehq/airbyte/master",
 } as const;
 
 export type OutboundLinks = typeof links;

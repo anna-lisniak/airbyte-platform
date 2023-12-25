@@ -1,7 +1,7 @@
 import { NormalizationType } from "area/connection/types";
-import { AirbyteStreamAndConfiguration, OperationCreate, OperatorType } from "core/request/AirbyteClient";
+import { AirbyteStreamAndConfiguration, OperationCreate, OperatorType } from "core/api/types/AirbyteClient";
 
-import { HookFormConnectionFormValues } from "./hookFormConfig";
+import { FormConnectionFormValues } from "./formConfig";
 
 /**
  * since AirbyteStreamAndConfiguration don't have a unique identifier
@@ -14,12 +14,7 @@ export const isSameSyncStream = (
   streamNode: AirbyteStreamAndConfiguration,
   streamName: string | undefined,
   streamNamespace: string | undefined
-) => {
-  if (streamName === undefined || streamNamespace === undefined) {
-    console.warn("streamName or streamNamespace is undefined");
-  }
-  return streamNode.stream?.name === streamName && streamNode.stream?.namespace === streamNamespace;
-};
+) => streamNode.stream?.name === streamName && streamNode.stream?.namespace === streamNamespace;
 /**
  * map the normalization option to the operation
  */
@@ -54,8 +49,8 @@ const mapNormalizationOptionToOperation = (
  */
 export const mapFormValuesToOperations = (
   workspaceId: string,
-  normalization: HookFormConnectionFormValues["normalization"],
-  transformations: HookFormConnectionFormValues["transformations"]
+  normalization: FormConnectionFormValues["normalization"],
+  transformations: FormConnectionFormValues["transformations"]
 ): OperationCreate[] => {
   const normalizationOperation = mapNormalizationOptionToOperation(workspaceId, normalization);
 

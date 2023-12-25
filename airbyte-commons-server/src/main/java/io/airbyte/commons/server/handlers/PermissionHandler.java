@@ -20,13 +20,13 @@ import io.airbyte.commons.lang.Exceptions;
 import io.airbyte.commons.server.errors.OperationNotAllowedException;
 import io.airbyte.config.ConfigSchema;
 import io.airbyte.config.Permission;
-import io.airbyte.config.UserPermission;
 import io.airbyte.config.helpers.PermissionHelper;
 import io.airbyte.config.persistence.ConfigNotFoundException;
 import io.airbyte.config.persistence.PermissionPersistence;
 import io.airbyte.config.persistence.SQLOperationNotAllowedException;
 import io.airbyte.data.services.WorkspaceService;
 import io.airbyte.validation.json.JsonValidationException;
+import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import java.io.IOException;
 import java.util.Comparator;
@@ -54,7 +54,7 @@ public class PermissionHandler {
   public PermissionHandler(
                            final PermissionPersistence permissionPersistence,
                            final WorkspaceService workspaceService,
-                           final Supplier<UUID> uuidGenerator) {
+                           @Named("uuidGenerator") final Supplier<UUID> uuidGenerator) {
     this.uuidGenerator = uuidGenerator;
     this.permissionPersistence = permissionPersistence;
     this.workspaceService = workspaceService;
@@ -92,10 +92,10 @@ public class PermissionHandler {
         .withOrganizationId(permissionCreate.getOrganizationId());
 
     permissionPersistence.writePermission(permission);
-    PermissionRead result;
+    final PermissionRead result;
     try {
       result = buildPermissionRead(permissionId);
-    } catch (ConfigNotFoundException ex) {
+    } catch (final ConfigNotFoundException ex) {
       LOGGER.error("Config not found for permissionId: {} in CreatePermission.", permissionId);
       throw new IOException(ex);
     }
@@ -244,7 +244,7 @@ public class PermissionHandler {
    * to.
    */
   private boolean checkPermissions(final PermissionCheckRequest permissionCheckRequest, final PermissionRead userPermission)
-      throws JsonValidationException, io.airbyte.data.exceptions.ConfigNotFoundException, IOException {
+      throws JsonValidationException, IOException, ConfigNotFoundException {
 
     if (mismatchedUserIds(userPermission, permissionCheckRequest)) {
       return false;
@@ -295,15 +295,20 @@ public class PermissionHandler {
 
   // check if this permission request is for a workspace that belongs to a different organization than
   // the user permission.
+  @SuppressWarnings("PMD.PreserveStackTrace")
   private boolean requestedWorkspaceNotInOrganization(final PermissionRead userPermission, final PermissionCheckRequest request)
-      throws JsonValidationException, io.airbyte.data.exceptions.ConfigNotFoundException, IOException {
+      throws JsonValidationException, IOException, ConfigNotFoundException {
 
     // if the user permission is for an organization, and the request is for a workspace, return true if
     // the workspace
     // does not belong to the organization.
     if (userPermission.getOrganizationId() != null && request.getWorkspaceId() != null) {
-      final UUID requestedWorkspaceOrganizationId =
-          workspaceService.getStandardWorkspaceNoSecrets(request.getWorkspaceId(), false).getOrganizationId();
+      final UUID requestedWorkspaceOrganizationId;
+      try {
+        requestedWorkspaceOrganizationId = workspaceService.getStandardWorkspaceNoSecrets(request.getWorkspaceId(), false).getOrganizationId();
+      } catch (final io.airbyte.data.exceptions.ConfigNotFoundException e) {
+        throw new ConfigNotFoundException(e.getType(), e.getConfigId());
+      }
       return !requestedWorkspaceOrganizationId.equals(userPermission.getOrganizationId());
     }
 
@@ -335,7 +340,7 @@ public class PermissionHandler {
         .map(permissionCheckRequest -> {
           try {
             return checkPermissions(permissionCheckRequest);
-          } catch (IOException e) {
+          } catch (final IOException e) {
             LOGGER.error("Error checking permissions for request: {}", permissionCheckRequest);
             return new PermissionCheckRead().status(StatusEnum.FAILED);
           }
@@ -348,16 +353,8 @@ public class PermissionHandler {
         : new PermissionCheckRead().status(StatusEnum.FAILED);
   }
 
-  /**
-   * Check and get instance_admin permission for a user.
-   *
-   * @param userId user id
-   * @return UserPermission User details with instance_admin permission, null if user does not have
-   *         instance_admin role.
-   * @throws IOException if there is an issue while interacting with the db.
-   */
-  public UserPermission getUserInstanceAdminPermission(final UUID userId) throws IOException {
-    return permissionPersistence.getUserInstanceAdminPermission(userId);
+  public Boolean isUserInstanceAdmin(final UUID userId) throws IOException {
+    return permissionPersistence.isUserInstanceAdmin(userId);
   }
 
   /**

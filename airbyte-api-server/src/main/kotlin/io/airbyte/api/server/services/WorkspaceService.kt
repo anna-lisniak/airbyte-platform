@@ -16,7 +16,6 @@ import io.airbyte.api.client.model.generated.WorkspaceIdRequestBody
 import io.airbyte.api.client.model.generated.WorkspaceRead
 import io.airbyte.api.client.model.generated.WorkspaceReadList
 import io.airbyte.api.server.apiTracking.TrackingHelper
-import io.airbyte.api.server.constants.AIRBYTE_API_AUTH_HEADER_VALUE
 import io.airbyte.api.server.constants.DELETE
 import io.airbyte.api.server.constants.GET
 import io.airbyte.api.server.constants.HTTP_RESPONSE_BODY_DEBUG_MESSAGE
@@ -41,43 +40,51 @@ import javax.ws.rs.core.Response
 interface WorkspaceService {
   fun createWorkspace(
     workspaceCreateRequest: WorkspaceCreateRequest,
+    authorization: String?,
     userInfo: String?,
   ): WorkspaceResponse
 
   fun controllerCreateWorkspace(
     workspaceCreateRequest: WorkspaceCreateRequest,
+    authorization: String?,
     userInfo: String?,
   ): Response
 
   fun updateWorkspace(
     workspaceId: UUID,
     workspaceUpdateRequest: WorkspaceUpdateRequest,
+    authorization: String?,
     userInfo: String?,
   ): WorkspaceResponse
 
   fun controllerUpdateWorkspace(
     workspaceId: UUID,
     workspaceUpdateRequest: WorkspaceUpdateRequest,
+    authorization: String?,
     userInfo: String?,
   ): Response
 
   fun getWorkspace(
     workspaceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ): WorkspaceResponse
 
   fun controllerGetWorkspace(
     workspaceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ): Response
 
   fun deleteWorkspace(
     workspaceId: UUID,
+    authorization: String?,
     userInfo: String?,
   )
 
   fun controllerDeleteWorkspace(
     workspaceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ): Response
 
@@ -86,6 +93,7 @@ interface WorkspaceService {
     includeDeleted: Boolean = false,
     limit: Int = 20,
     offset: Int = 0,
+    authorization: String?,
     userInfo: String?,
   ): WorkspacesResponse
 
@@ -94,19 +102,25 @@ interface WorkspaceService {
     includeDeleted: Boolean = false,
     limit: Int = 20,
     offset: Int = 0,
+    authorization: String?,
     userInfo: String?,
   ): Response
 
   fun controllerSetWorkspaceOverrideOAuthParams(
     workspaceId: UUID?,
     workspaceOAuthCredentialsRequest: WorkspaceOAuthCredentialsRequest?,
+    authorization: String?,
     userInfo: String?,
   ): Response
 }
 
 @Singleton
 @Secondary
-open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, private val userService: UserService) : WorkspaceService {
+open class WorkspaceServiceImpl(
+  private val configApiClient: ConfigApiClient,
+  private val userService: UserService,
+  private val trackingHelper: TrackingHelper,
+) : WorkspaceService {
   @Value("\${airbyte.api.host}")
   var publicApiHost: String? = null
 
@@ -119,12 +133,13 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
    */
   override fun createWorkspace(
     workspaceCreateRequest: WorkspaceCreateRequest,
+    authorization: String?,
     userInfo: String?,
   ): WorkspaceResponse {
     val workspaceCreate = WorkspaceCreate().name(workspaceCreateRequest.name)
     val workspaceReadHttpResponse =
       try {
-        configApiClient.createWorkspace(workspaceCreate, System.getenv(AIRBYTE_API_AUTH_HEADER_VALUE))
+        configApiClient.createWorkspace(workspaceCreate, authorization, userInfo)
       } catch (e: HttpClientResponseException) {
         log.error("Config api response error for createWorkspace: ", e)
         e.response as HttpResponse<WorkspaceRead>
@@ -140,18 +155,19 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
 
   override fun controllerCreateWorkspace(
     workspaceCreateRequest: WorkspaceCreateRequest,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
 
     val workspaceResponse: WorkspaceResponse =
-      TrackingHelper.callWithTracker(
-        { createWorkspace(workspaceCreateRequest, userInfo) },
+      trackingHelper.callWithTracker(
+        { createWorkspace(workspaceCreateRequest, authorization, userInfo) },
         WORKSPACES_PATH,
         POST,
         userId,
       ) as WorkspaceResponse
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       WORKSPACES_PATH,
       POST,
       userId,
@@ -169,6 +185,7 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
   override fun updateWorkspace(
     workspaceId: UUID,
     workspaceUpdateRequest: WorkspaceUpdateRequest,
+    authorization: String?,
     userInfo: String?,
   ): WorkspaceResponse {
     // Update workspace in the cloud version of the airbyte API currently only supports name updates, but we don't have name updates in OSS.
@@ -178,6 +195,7 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
   override fun controllerUpdateWorkspace(
     workspaceId: UUID,
     workspaceUpdateRequest: WorkspaceUpdateRequest,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     return Response.status(Response.Status.NOT_IMPLEMENTED).build()
@@ -188,13 +206,14 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
    */
   override fun getWorkspace(
     workspaceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ): WorkspaceResponse {
     val workspaceIdRequestBody = WorkspaceIdRequestBody()
     workspaceIdRequestBody.workspaceId = workspaceId
     val response =
       try {
-        configApiClient.getWorkspace(workspaceIdRequestBody, userInfo)
+        configApiClient.getWorkspace(workspaceIdRequestBody, authorization, userInfo)
       } catch (e: HttpClientResponseException) {
         log.error("Config api response error for getWorkspace: ", e)
         e.response as HttpResponse<WorkspaceRead>
@@ -206,15 +225,17 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
 
   override fun controllerGetWorkspace(
     workspaceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
 
     val workspaceResponse: Any? =
-      TrackingHelper.callWithTracker(
+      trackingHelper.callWithTracker(
         {
           getWorkspace(
             workspaceId,
+            authorization,
             getLocalUserInfoIfNull(userInfo),
           )
         },
@@ -222,7 +243,7 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
         GET,
         userId,
       )
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       WORKSPACES_WITH_ID_PATH,
       GET,
       userId,
@@ -238,13 +259,14 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
    */
   override fun deleteWorkspace(
     workspaceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ) {
     val workspaceIdRequestBody = WorkspaceIdRequestBody()
     workspaceIdRequestBody.workspaceId = workspaceId
     val response =
       try {
-        configApiClient.deleteWorkspace(workspaceIdRequestBody, userInfo)
+        configApiClient.deleteWorkspace(workspaceIdRequestBody, authorization, userInfo)
       } catch (e: HttpClientResponseException) {
         log.error("Config api response error for deleteWorkspace: ", e)
         e.response as HttpResponse<Unit>
@@ -255,15 +277,17 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
 
   override fun controllerDeleteWorkspace(
     workspaceId: UUID,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
 
     val workspaceResponse: Any? =
-      TrackingHelper.callWithTracker(
+      trackingHelper.callWithTracker(
         {
           deleteWorkspace(
             workspaceId!!,
+            authorization,
             getLocalUserInfoIfNull(userInfo),
           )
         },
@@ -285,6 +309,7 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
     includeDeleted: Boolean,
     limit: Int,
     offset: Int,
+    authorization: String?,
     userInfo: String?,
   ): WorkspacesResponse {
     val pagination: Pagination = Pagination().pageSize(limit).rowOffset(offset)
@@ -297,7 +322,7 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
     listResourcesForWorkspacesRequestBody.workspaceIds = workspaceIdsToQuery
     val response =
       try {
-        configApiClient.listWorkspaces(listResourcesForWorkspacesRequestBody, userInfo)
+        configApiClient.listWorkspaces(listResourcesForWorkspacesRequestBody, authorization, userInfo)
       } catch (e: HttpClientResponseException) {
         log.error("Config api response error for listWorkspaces: ", e)
         e.response as HttpResponse<WorkspaceReadList>
@@ -319,6 +344,7 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
     includeDeleted: Boolean,
     limit: Int,
     offset: Int,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     val userId: UUID = userService.getUserIdFromUserInfoString(userInfo)
@@ -326,13 +352,14 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
     val safeWorkspaceIds = workspaceIds ?: emptyList()
 
     val workspaces: Any? =
-      TrackingHelper.callWithTracker(
+      trackingHelper.callWithTracker(
         {
           listWorkspaces(
             safeWorkspaceIds,
             includeDeleted,
             limit,
             offset,
+            authorization,
             getLocalUserInfoIfNull(userInfo),
           )
         },
@@ -340,7 +367,7 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
         GET,
         userId,
       )
-    TrackingHelper.trackSuccess(
+    trackingHelper.trackSuccess(
       WORKSPACES_PATH,
       GET,
       userId,
@@ -354,6 +381,7 @@ open class WorkspaceServiceImpl(private val configApiClient: ConfigApiClient, pr
   override fun controllerSetWorkspaceOverrideOAuthParams(
     workspaceId: UUID?,
     workspaceOAuthCredentialsRequest: WorkspaceOAuthCredentialsRequest?,
+    authorization: String?,
     userInfo: String?,
   ): Response {
     return Response.status(Response.Status.NOT_IMPLEMENTED).build()

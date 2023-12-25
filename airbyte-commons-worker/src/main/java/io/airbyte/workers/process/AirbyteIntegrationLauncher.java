@@ -9,6 +9,8 @@ import static io.airbyte.metrics.lib.ApmTraceConstants.Tags.JOB_ID_KEY;
 import static io.airbyte.metrics.lib.ApmTraceConstants.Tags.JOB_ROOT_KEY;
 import static io.airbyte.metrics.lib.ApmTraceConstants.WORKER_OPERATION_NAME;
 import static io.airbyte.workers.process.Metadata.CHECK_JOB;
+import static io.airbyte.workers.process.Metadata.CHECK_STEP_KEY;
+import static io.airbyte.workers.process.Metadata.CONNECTOR_STEP;
 import static io.airbyte.workers.process.Metadata.DISCOVER_JOB;
 import static io.airbyte.workers.process.Metadata.JOB_TYPE_KEY;
 import static io.airbyte.workers.process.Metadata.READ_STEP;
@@ -75,6 +77,7 @@ public class AirbyteIntegrationLauncher implements IntegrationLauncher {
   private final FeatureFlags featureFlags;
 
   private final Map<String, String> additionalEnvironmentVariables;
+  private final Map<String, String> additionalLabels;
 
   /**
    * If true, launcher will use a separated isolated pool to run the job.
@@ -95,7 +98,8 @@ public class AirbyteIntegrationLauncher implements IntegrationLauncher {
                                     final AllowedHosts allowedHosts,
                                     final boolean useIsolatedPool,
                                     final FeatureFlags featureFlags,
-                                    final Map<String, String> additionalEnvironmentVariables) {
+                                    final Map<String, String> additionalEnvironmentVariables,
+                                    final Map<String, String> additionalLabels) {
     this.jobId = jobId;
     this.attempt = attempt;
     this.connectionId = connectionId;
@@ -108,6 +112,7 @@ public class AirbyteIntegrationLauncher implements IntegrationLauncher {
     this.featureFlags = featureFlags;
     this.useIsolatedPool = useIsolatedPool;
     this.additionalEnvironmentVariables = additionalEnvironmentVariables;
+    this.additionalLabels = additionalLabels;
   }
 
   @Trace(operationName = WORKER_OPERATION_NAME)
@@ -155,7 +160,7 @@ public class AirbyteIntegrationLauncher implements IntegrationLauncher {
         null,
         buildGenericConnectorResourceRequirements(resourceRequirement),
         allowedHosts,
-        Map.of(JOB_TYPE_KEY, CHECK_JOB),
+        Map.of(JOB_TYPE_KEY, CHECK_JOB, CHECK_STEP_KEY, CONNECTOR_STEP),
         getWorkerMetadata(),
         Collections.emptyMap(),
         additionalEnvironmentVariables,
@@ -233,7 +238,7 @@ public class AirbyteIntegrationLauncher implements IntegrationLauncher {
         null,
         buildSourceConnectorResourceRequirements(resourceRequirement, syncResourceRequirements),
         allowedHosts,
-        Map.of(JOB_TYPE_KEY, SYNC_JOB, SYNC_STEP_KEY, READ_STEP),
+        getLabels(Map.of(JOB_TYPE_KEY, SYNC_JOB, SYNC_STEP_KEY, READ_STEP)),
         getWorkerMetadata(),
         Collections.emptyMap(),
         additionalEnvironmentVariables,
@@ -268,13 +273,20 @@ public class AirbyteIntegrationLauncher implements IntegrationLauncher {
         null,
         buildDestinationConnectorResourceRequirements(resourceRequirement, syncResourceRequirements),
         allowedHosts,
-        Map.of(JOB_TYPE_KEY, SYNC_JOB, SYNC_STEP_KEY, WRITE_STEP),
+        getLabels(Map.of(JOB_TYPE_KEY, SYNC_JOB, SYNC_STEP_KEY, WRITE_STEP)),
         getWorkerMetadata(),
         Collections.emptyMap(),
         additionalEnvironmentVariables,
         "write",
         CONFIG, configFilename,
         "--catalog", catalogFilename);
+  }
+
+  private Map<String, String> getLabels(final Map<String, String> labels) {
+    final var mergedLabels = new HashMap<String, String>();
+    mergedLabels.putAll(additionalLabels);
+    mergedLabels.putAll(labels);
+    return mergedLabels;
   }
 
   private Map<String, String> getWorkerMetadata() {

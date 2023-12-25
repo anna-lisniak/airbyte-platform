@@ -3,7 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { mockUser } from "test-utils/mock-data/mockUser";
 
 import { useListPermissions } from "core/api";
-import { PermissionRead } from "core/request/AirbyteClient";
+import { PermissionRead } from "core/api/types/AirbyteClient";
 
 import { useRbac } from "./rbac";
 import { RbacPermission, useRbacPermissionsQuery } from "./rbacPermissionsQuery";
@@ -55,7 +55,10 @@ describe("useRbac", () => {
       mockUseRbacPermissionsQuery.mockClear();
       renderHook(() => useRbac({ resourceType: "INSTANCE", role: "ADMIN" }));
       expect(mockUseRbacPermissionsQuery).toHaveBeenCalledTimes(1);
-      expect(mockUseRbacPermissionsQuery.mock.lastCall?.[1]).toEqual({ resourceType: "INSTANCE", role: "ADMIN" });
+      expect(mockUseRbacPermissionsQuery.mock.lastCall?.[1]).toEqual({
+        resourceType: "INSTANCE",
+        role: "ADMIN",
+      });
     });
 
     it("instance admin does not need to add details to the query", () => {

@@ -1,5 +1,3 @@
-import { faIdCardClip } from "@fortawesome/free-solid-svg-icons";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { useRef, useState } from "react";
 import { FormattedMessage, useIntl } from "react-intl";
 import { createSearchParams, useNavigate, useSearchParams } from "react-router-dom";
@@ -7,11 +5,11 @@ import { useUnmount } from "react-use";
 import { Subscription } from "rxjs";
 
 import { FlexContainer } from "components/ui/Flex";
+import { Icon } from "components/ui/Icon";
 import { Link } from "components/ui/Link";
 import { Spinner } from "components/ui/Spinner";
 
 import { OAuthProviders, AuthOAuthLogin } from "core/services/auth";
-import { useLocalStorage } from "core/utils/useLocalStorage";
 import { CloudRoutes } from "packages/cloud/cloudRoutePaths";
 
 import githubLogo from "./assets/github-logo.svg";
@@ -45,7 +43,7 @@ const SsoButton: React.FC = () => {
 
   return (
     <Link className={styles.sso} to={linkLocation}>
-      <FontAwesomeIcon icon={faIdCardClip} />
+      <Icon type="idCard" />
       <FormattedMessage id="login.sso.continueWithSSO" tagName="span" />
     </Link>
   );
@@ -63,8 +61,6 @@ export const OAuthLogin: React.FC<OAuthLoginProps> = ({ loginWithOAuth }) => {
   const [searchParams] = useSearchParams();
   const loginRedirect = searchParams.get("loginRedirect");
   const navigate = useNavigate();
-
-  const [showSsoLogin] = useLocalStorage("airbyte_show-sso-login", false);
 
   useUnmount(() => {
     stateSubscription.current?.unsubscribe();
@@ -120,7 +116,7 @@ export const OAuthLogin: React.FC<OAuthLoginProps> = ({ loginWithOAuth }) => {
         <>
           <GoogleButton onClick={() => login("google")} />
           <GitHubButton onClick={() => login("github")} />
-          {showSsoLogin && <SsoButton />}
+          <SsoButton />
         </>
       )}
       {errorMessage && <div className={styles.error}>{errorMessage}</div>}

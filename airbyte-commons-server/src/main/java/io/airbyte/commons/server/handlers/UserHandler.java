@@ -4,14 +4,18 @@
 
 package io.airbyte.commons.server.handlers;
 
+import static io.airbyte.config.persistence.UserPersistence.DEFAULT_USER_ID;
+
 import com.google.common.annotations.VisibleForTesting;
 import io.airbyte.api.model.generated.AuthProvider;
+import io.airbyte.api.model.generated.ListWorkspacesInOrganizationRequestBody;
 import io.airbyte.api.model.generated.OrganizationIdRequestBody;
 import io.airbyte.api.model.generated.OrganizationUserRead;
 import io.airbyte.api.model.generated.OrganizationUserReadList;
 import io.airbyte.api.model.generated.PermissionType;
 import io.airbyte.api.model.generated.UserAuthIdRequestBody;
 import io.airbyte.api.model.generated.UserCreate;
+import io.airbyte.api.model.generated.UserEmailRequestBody;
 import io.airbyte.api.model.generated.UserGetOrCreateByAuthIdResponse;
 import io.airbyte.api.model.generated.UserIdRequestBody;
 import io.airbyte.api.model.generated.UserRead;
@@ -21,6 +25,7 @@ import io.airbyte.api.model.generated.UserWithPermissionInfoRead;
 import io.airbyte.api.model.generated.UserWithPermissionInfoReadList;
 import io.airbyte.api.model.generated.WorkspaceIdRequestBody;
 import io.airbyte.api.model.generated.WorkspaceRead;
+import io.airbyte.api.model.generated.WorkspaceReadList;
 import io.airbyte.api.model.generated.WorkspaceUserRead;
 import io.airbyte.api.model.generated.WorkspaceUserReadList;
 import io.airbyte.commons.auth.config.InitialUserConfiguration;
@@ -39,6 +44,7 @@ import io.airbyte.config.persistence.OrganizationPersistence;
 import io.airbyte.config.persistence.PermissionPersistence;
 import io.airbyte.config.persistence.UserPersistence;
 import io.airbyte.validation.json.JsonValidationException;
+import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import java.io.IOException;
 import java.util.List;
@@ -75,7 +81,7 @@ public class UserHandler {
                      final OrganizationPersistence organizationPersistence,
                      final PermissionHandler permissionHandler,
                      final WorkspacesHandler workspacesHandler,
-                     final Supplier<UUID> uuidGenerator,
+                     @Named("uuidGenerator") final Supplier<UUID> uuidGenerator,
                      final Optional<UserAuthenticationResolver> userAuthenticationResolver,
                      final Optional<InitialUserConfiguration> initialUserConfiguration) {
     this.uuidGenerator = uuidGenerator;
@@ -161,6 +167,24 @@ public class UserHandler {
       return buildUserRead(user.get());
     } else {
       throw new ConfigNotFoundException(ConfigSchema.USER, String.format("User not found by auth request: %s", userAuthIdRequestBody));
+    }
+  }
+
+  /**
+   * Retrieves the user by email.
+   *
+   * @param userEmailRequestBody The {@link UserEmailRequestBody} that contains the email.
+   * @return The user associated with the email.
+   * @throws IOException if unable to retrieve the user.
+   * @throws JsonValidationException if unable to retrieve the user.
+   */
+  public UserRead getUserByEmail(final UserEmailRequestBody userEmailRequestBody)
+      throws IOException, JsonValidationException, ConfigNotFoundException {
+    final Optional<User> user = userPersistence.getUserByEmail(userEmailRequestBody.getEmail());
+    if (user.isPresent()) {
+      return buildUserRead(user.get());
+    } else {
+      throw new ConfigNotFoundException(ConfigSchema.USER, String.format("User not found by email request: %s", userEmailRequestBody));
     }
   }
 
@@ -369,22 +393,39 @@ public class UserHandler {
 
   private void handleSsoUser(final UserRead user, final Organization organization)
       throws IOException, JsonValidationException, ConfigNotFoundException {
-    final boolean isFirstOrgUser = permissionPersistence.listPermissionsForOrganization(organization.getOrganizationId()).isEmpty();
-    if (isFirstOrgUser) {
-      final WorkspaceRead defaultWorkspace = createDefaultWorkspaceforUser(user, Optional.of(organization));
-      createPermissionForUserAndWorkspace(user.getUserId(), defaultWorkspace.getWorkspaceId(), PermissionType.WORKSPACE_ADMIN);
+    // look for any existing user permissions for this organization. exclude the default user that comes
+    // with the Airbyte installation, since we want the first real SSO user to be the org admin.
+    final List<UserPermission> orgPermissionsExcludingDefaultUser =
+        permissionPersistence.listPermissionsForOrganization(organization.getOrganizationId())
+            .stream()
+            .filter(userPermission -> !userPermission.getUser().getUserId().equals(DEFAULT_USER_ID))
+            .toList();
+
+    // If this is the first real user in the org, create a default workspace for them and make them an
+    // org admin.
+    if (orgPermissionsExcludingDefaultUser.isEmpty()) {
       createPermissionForUserAndOrg(user.getUserId(), organization.getOrganizationId(), PermissionType.ORGANIZATION_ADMIN);
     } else {
       createPermissionForUserAndOrg(user.getUserId(), organization.getOrganizationId(), PermissionType.ORGANIZATION_MEMBER);
     }
+
+    // If this organization doesn't have a workspace yet, create one, and set it as the default
+    // workspace for this user.
+    final WorkspaceReadList orgWorkspaces = workspacesHandler.listWorkspacesInOrganization(
+        new ListWorkspacesInOrganizationRequestBody().organizationId(organization.getOrganizationId()));
+
+    if (orgWorkspaces.getWorkspaces().isEmpty()) {
+      final WorkspaceRead defaultWorkspace = createDefaultWorkspaceForUser(user, Optional.of(organization));
+      createPermissionForUserAndWorkspace(user.getUserId(), defaultWorkspace.getWorkspaceId(), PermissionType.WORKSPACE_ADMIN);
+    }
   }
 
   private void handleNonSsoUser(final UserRead user) throws JsonValidationException, ConfigNotFoundException, IOException {
-    final WorkspaceRead defaultWorkspace = createDefaultWorkspaceforUser(user, Optional.empty());
+    final WorkspaceRead defaultWorkspace = createDefaultWorkspaceForUser(user, Optional.empty());
     createPermissionForUserAndWorkspace(user.getUserId(), defaultWorkspace.getWorkspaceId(), PermissionType.WORKSPACE_ADMIN);
   }
 
-  private WorkspaceRead createDefaultWorkspaceforUser(final UserRead createdUser, final Optional<Organization> organization)
+  private WorkspaceRead createDefaultWorkspaceForUser(final UserRead createdUser, final Optional<Organization> organization)
       throws JsonValidationException, IOException, ConfigNotFoundException {
 
     final WorkspaceRead defaultWorkspace = workspacesHandler.createDefaultWorkspaceForUser(createdUser, organization);
@@ -459,26 +500,28 @@ public class UserHandler {
   }
 
   private WorkspaceUserReadList buildWorkspaceUserReadList(final List<UserPermission> userPermissions, final UUID workspaceId) {
-
-    return new WorkspaceUserReadList().users(
-        userPermissions
-            .stream()
-            .map(userPermission -> new WorkspaceUserRead()
-                .userId(userPermission.getUser().getUserId())
-                .email(userPermission.getUser().getEmail())
-                .name(userPermission.getUser().getName())
-                .isDefaultWorkspace(workspaceId.equals(userPermission.getUser().getDefaultWorkspaceId()))
-                .workspaceId(workspaceId)
-                .permissionId(userPermission.getPermission().getPermissionId())
-                .permissionType(
-                    Enums.toEnum(userPermission.getPermission().getPermissionType().value(), io.airbyte.api.model.generated.PermissionType.class)
-                        .get()))
-            .collect(Collectors.toList()));
+    // we exclude the default user from this list because we don't want to expose it in the UI
+    return new WorkspaceUserReadList().users(userPermissions
+        .stream()
+        .filter(userPermission -> !userPermission.getUser().getUserId().equals(DEFAULT_USER_ID))
+        .map(userPermission -> new WorkspaceUserRead()
+            .userId(userPermission.getUser().getUserId())
+            .email(userPermission.getUser().getEmail())
+            .name(userPermission.getUser().getName())
+            .isDefaultWorkspace(workspaceId.equals(userPermission.getUser().getDefaultWorkspaceId()))
+            .workspaceId(workspaceId)
+            .permissionId(userPermission.getPermission().getPermissionId())
+            .permissionType(
+                Enums.toEnum(userPermission.getPermission().getPermissionType().value(), io.airbyte.api.model.generated.PermissionType.class)
+                    .get()))
+        .collect(Collectors.toList()));
   }
 
   private OrganizationUserReadList buildOrganizationUserReadList(final List<UserPermission> userPermissions, final UUID organizationId) {
+    // we exclude the default user from this list because we don't want to expose it in the UI
     return new OrganizationUserReadList().users(userPermissions
         .stream()
+        .filter(userPermission -> !userPermission.getUser().getUserId().equals(DEFAULT_USER_ID))
         .map(userPermission -> new OrganizationUserRead()
             .userId(userPermission.getUser().getUserId())
             .email(userPermission.getUser().getEmail())

@@ -31,8 +31,6 @@ object ContainerOrchestratorJavaOpts : Temporary<String>(key = "container-orches
 
 object NewTrialPolicyEnabled : Temporary<Boolean>(key = "billing.newTrialPolicy", default = false)
 
-object AutoPropagateNewStreams : Temporary<Boolean>(key = "autopropagate-new-streams.enabled", default = false)
-
 object CanonicalCatalogSchema : Temporary<Boolean>(key = "canonical-catalog-schema", default = false)
 
 object CatalogCanonicalJson : Temporary<Boolean>(key = "catalog-canonical-json", default = false)
@@ -61,9 +59,11 @@ object ShouldFailSyncIfHeartbeatFailure : Permanent<Boolean>(key = "heartbeat.fa
 
 object ConnectorVersionOverride : Permanent<String>(key = "connectors.versionOverrides", default = "")
 
-object DestinationTimeoutEnabled : Permanent<Boolean>(key = "destination-timeout-enabled", default = false)
+object DestinationTimeoutEnabled : Permanent<Boolean>(key = "destination-timeout-enabled", default = true)
 
-object ShouldFailSyncOnDestinationTimeout : Permanent<Boolean>(key = "destination-timeout.failSync", default = false)
+object ShouldFailSyncOnDestinationTimeout : Permanent<Boolean>(key = "destination-timeout.failSync", default = true)
+
+object DestinationTimeoutSeconds : Permanent<Int>(key = "destination-timeout.seconds", default = 7200)
 
 object UseActorScopedDefaultVersions : Temporary<Boolean>(key = "connectors.useActorScopedDefaultVersions", default = true)
 
@@ -115,12 +115,6 @@ object ConnectorApmEnabled : Permanent<Boolean>(key = "connectors.apm-enabled", 
 
 object AutoRechargeEnabled : Permanent<Boolean>(key = "billing.autoRecharge", default = false)
 
-/**
- * Control whether we should retrieve large inputs -- catalog, state -- via the API instead of passing them through
- * the sync input.
- */
-object RemoveLargeSyncInputs : Temporary<Boolean>(key = "platform.remove-large-sync-inputs", default = false)
-
 // NOTE: this is deprecated in favor of FieldSelectionEnabled and will be removed once that flag is fully deployed.
 object FieldSelectionWorkspaces : EnvVar(envVar = "FIELD_SELECTION_WORKSPACES") {
   override fun enabled(ctx: Context): Boolean {
@@ -158,6 +152,33 @@ object FailSyncIfTooBig : Temporary<Boolean>(key = "platform.fail-sync-if-too-bi
 
 object DefaultOrgForNewWorkspace : Temporary<Boolean>(key = "platform.set-default-org-for-new-workspace", default = false)
 
+object WorkloadHeartbeatRate : Permanent<Int>(key = "workload.heartbeat.rate", default = 5)
+
+object WorkloadPollingInterval : Permanent<Int>(key = "workload.polling.interval", default = 30)
+
+/**
+ * Duration in minutes. This should always be less than the value for [io.airbyte.cron.jobs.WorkloadMonitor.heartbeatTimeout]
+ */
+object WorkloadHeartbeatTimeout : Permanent<Int>(key = "workload.heartbeat.timeout", default = 4)
+
 object UseNewCronScheduleCalculation : Temporary<Boolean>(key = "platform.use-new-cron-schedule-calculation", default = false)
 
 object UseRuntimeSecretPersistence : Temporary<Boolean>(key = "platform.use-runtime-secret-persistence", default = false)
+
+object UseWorkloadApi : Temporary<Boolean>(key = "platform.use-workload-api", default = false)
+
+object AddInitialCreditsForWorkspace : Temporary<Int>(key = "add-credits-at-workspace-creation-for-org", default = 0)
+
+object WorkloadApiRouting : Permanent<String>(key = "workload-api-routing", default = "workload_default")
+
+object FailMissingPks : Temporary<Boolean>(key = "platform.fail-missing-pks", default = false)
+
+object PrintLongRecordPks : Temporary<Boolean>(key = "platform.print-long-record-pks", default = false)
+
+object TrackCommittedStatsWhenUsingGlobalState : Temporary<Boolean>(key = "global-state-committed-stats-tracking-enabled", default = false)
+
+object UseWorkloadOutputDocStore : Temporary<Boolean>(key = "platform.use-workload-output-doc-store", default = false)
+
+object UseWorkloadApiForCheck : Temporary<Boolean>(key = "platform.use-workload-api-for-check", default = false)
+
+object WorkloadCheckFrequencyInSeconds : Permanent<Int>(key = "platform.workload-check-frequency-in-seconds", default = 1)

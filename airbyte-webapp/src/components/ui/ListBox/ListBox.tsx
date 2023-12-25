@@ -3,7 +3,7 @@ import { Listbox } from "@headlessui/react";
 import { Float } from "@headlessui-float/react";
 import classNames from "classnames";
 import isEqual from "lodash/isEqual";
-import React from "react";
+import React, { ComponentPropsWithoutRef } from "react";
 import { useIntl } from "react-intl";
 
 import { Text } from "components/ui/Text";
@@ -35,7 +35,7 @@ const DefaultControlButton = <T,>({ selectedOption, isDisabled }: ListBoxControl
         </Text>
       )}
 
-      <Icon type="caretDown" color="action" />
+      <Icon type="chevronDown" color="action" />
     </>
   );
 };
@@ -45,18 +45,20 @@ export interface Option<T> {
   value: T;
   icon?: React.ReactNode;
   disabled?: boolean;
-  testId?: string;
+  "data-testid"?: string;
 }
 
 export interface ListBoxProps<T> {
   className?: string;
   optionsMenuClassName?: string;
   optionClassName?: string;
+  optionTextAs?: ComponentPropsWithoutRef<typeof Text>["as"];
   selectedOptionClassName?: string;
   options: Array<Option<T>>;
   selectedValue?: T;
   onSelect: (selectedValue: T) => void;
   buttonClassName?: string;
+  id?: string;
   isDisabled?: boolean;
   controlButton?: React.ComponentType<ListBoxControlButtonProps<T>>;
   "data-testid"?: string;
@@ -87,9 +89,11 @@ export const ListBox = <T,>({
   controlButton: ControlButton = DefaultControlButton,
   optionsMenuClassName,
   optionClassName,
+  optionTextAs,
   selectedOptionClassName,
   "data-testid": testId,
   hasError,
+  id,
   isDisabled,
   placement = "bottom",
   adaptiveWidth = true,
@@ -102,7 +106,12 @@ export const ListBox = <T,>({
   };
 
   return (
-    <div className={className} data-testid={testId}>
+    <div
+      className={className}
+      {...(testId && {
+        "data-testid": testId,
+      })}
+    >
       <Listbox value={selectedValue} onChange={onOnSelect} disabled={isDisabled} by={isEqual}>
         <Float
           adaptiveWidth={adaptiveWidth}
@@ -116,13 +125,17 @@ export const ListBox = <T,>({
           <Listbox.Button
             className={classNames(buttonClassName, styles.button, { [styles["button--error"]]: hasError })}
             onClick={(e) => e.stopPropagation()}
+            {...(testId && {
+              "data-testid": `${testId}-listbox-button`,
+            })}
+            id={id}
           >
             <ControlButton selectedOption={selectedOption} isDisabled={isDisabled} />
           </Listbox.Button>
           <Listbox.Options className={classNames(styles.optionsMenu, optionsMenuClassName)}>
             {options.length > 0 && (
               <>
-                {options.map(({ label, value, icon, disabled, testId }, index) => (
+                {options.map(({ label, value, icon, disabled, ...restOptionProps }, index) => (
                   <Listbox.Option
                     key={typeof label === "string" ? label : index}
                     value={value}
@@ -131,7 +144,9 @@ export const ListBox = <T,>({
                       [styles.disabled]: disabled,
                     })}
                     onClick={(e) => e.stopPropagation()}
-                    {...(testId && { "data-testid": testId })}
+                    {...(restOptionProps["data-testid"] && {
+                      "data-testid": `${restOptionProps["data-testid"]}-option`,
+                    })}
                   >
                     {({ active, selected }) => (
                       <FlexContainer
@@ -142,7 +157,9 @@ export const ListBox = <T,>({
                         })}
                       >
                         {icon && <FlexItem className={styles.icon}>{icon}</FlexItem>}
-                        <Text className={styles.label}>{label}</Text>
+                        <Text className={styles.label} as={optionTextAs}>
+                          {label}
+                        </Text>
                       </FlexContainer>
                     )}
                   </Listbox.Option>

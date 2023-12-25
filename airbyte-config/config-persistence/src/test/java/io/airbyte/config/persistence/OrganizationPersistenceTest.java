@@ -7,6 +7,7 @@ package io.airbyte.config.persistence;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import io.airbyte.config.Organization;
 import io.airbyte.config.Permission;
@@ -16,8 +17,12 @@ import io.airbyte.config.StandardWorkspace;
 import io.airbyte.config.User;
 import io.airbyte.config.User.AuthProvider;
 import io.airbyte.config.persistence.ConfigRepository.ResourcesByUserQueryPaginated;
+import io.airbyte.config.secrets.SecretsRepositoryReader;
+import io.airbyte.config.secrets.SecretsRepositoryWriter;
+import io.airbyte.data.services.SecretPersistenceConfigService;
 import io.airbyte.data.services.WorkspaceService;
 import io.airbyte.data.services.impls.jooq.WorkspaceServiceJooqImpl;
+import io.airbyte.featureflag.TestClient;
 import io.airbyte.validation.json.JsonValidationException;
 import java.io.IOException;
 import java.util.List;
@@ -34,13 +39,27 @@ class OrganizationPersistenceTest extends BaseConfigDatabaseTest {
   private UserPersistence userPersistence;
   private PermissionPersistence permissionPersistence;
   private WorkspaceService workspaceService;
+  private TestClient featureFlagClient;
+  private SecretsRepositoryReader secretsRepositoryReader;
+  private SecretsRepositoryWriter secretsRepositoryWriter;
+  private SecretPersistenceConfigService secretPersistenceConfigService;
 
   @BeforeEach
   void beforeEach() throws Exception {
     permissionPersistence = new PermissionPersistence(database);
     userPersistence = new UserPersistence(database);
     organizationPersistence = new OrganizationPersistence(database);
-    workspaceService = new WorkspaceServiceJooqImpl(database);
+    featureFlagClient = new TestClient();
+    secretsRepositoryReader = mock(SecretsRepositoryReader.class);
+    secretsRepositoryWriter = mock(SecretsRepositoryWriter.class);
+    secretPersistenceConfigService = mock(SecretPersistenceConfigService.class);
+
+    workspaceService = new WorkspaceServiceJooqImpl(
+        database,
+        featureFlagClient,
+        secretsRepositoryReader,
+        secretsRepositoryWriter,
+        secretPersistenceConfigService);
     truncateAllTables();
 
     for (final Organization organization : MockData.organizations()) {
@@ -131,12 +150,33 @@ class OrganizationPersistenceTest extends BaseConfigDatabaseTest {
   }
 
   @Test
+  void getSsoConfigByRealmName() throws Exception {
+    final SsoConfig ssoConfig = MockData.ssoConfigs().get(0);
+    final Optional<SsoConfig> result = organizationPersistence.getSsoConfigByRealmName(ssoConfig.getKeycloakRealm());
+    assertTrue(result.isPresent());
+    assertEquals(ssoConfig, result.get());
+  }
+
+  @Test
   void updateOrganization() throws Exception {
-    String updatedName = "new name";
-    Organization organizationUpdate = new Organization().withOrganizationId(MockData.ORGANIZATION_ID_1).withName(updatedName);
-    organizationPersistence.updateOrganization(organizationUpdate);
-    Optional<Organization> result = organizationPersistence.getOrganization(MockData.ORGANIZATION_ID_1);
-    assertEquals(updatedName, result.get().getName());
+    final Organization updatedOrganization = MockData.organizations().get(0);
+
+    updatedOrganization.setName("new name");
+    updatedOrganization.setEmail("newemail@airbyte.io");
+    updatedOrganization.setPba(!updatedOrganization.getPba());
+    updatedOrganization.setOrgLevelBilling(!updatedOrganization.getOrgLevelBilling());
+    updatedOrganization.setUserId(MockData.CREATOR_USER_ID_5);
+
+    organizationPersistence.updateOrganization(updatedOrganization);
+
+    final Organization result = organizationPersistence.getOrganization(MockData.ORGANIZATION_ID_1).orElseThrow();
+
+    assertEquals(updatedOrganization.getOrganizationId(), result.getOrganizationId());
+    assertEquals(updatedOrganization.getName(), result.getName());
+    assertEquals(updatedOrganization.getEmail(), result.getEmail());
+    assertEquals(updatedOrganization.getPba(), result.getPba());
+    assertEquals(updatedOrganization.getOrgLevelBilling(), result.getOrgLevelBilling());
+    assertEquals(updatedOrganization.getUserId(), result.getUserId());
   }
 
   @ParameterizedTest

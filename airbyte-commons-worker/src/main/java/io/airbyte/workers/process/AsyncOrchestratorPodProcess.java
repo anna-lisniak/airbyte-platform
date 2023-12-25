@@ -7,12 +7,15 @@ package io.airbyte.workers.process;
 import io.airbyte.commons.io.IOs;
 import io.airbyte.commons.json.Jsons;
 import io.airbyte.config.ResourceRequirements;
+import io.airbyte.config.TolerationPOJO;
 import io.airbyte.config.helpers.LogClientSingleton;
 import io.airbyte.metrics.lib.MetricAttribute;
 import io.airbyte.metrics.lib.MetricClient;
 import io.airbyte.metrics.lib.MetricTags;
 import io.airbyte.metrics.lib.OssMetricsRegistry;
 import io.airbyte.workers.storage.DocumentStoreClient;
+import io.airbyte.workers.workload.JobOutputDocStore;
+import io.airbyte.workers.workload.exception.DocStoreAccessException;
 import io.fabric8.kubernetes.api.model.ContainerBuilder;
 import io.fabric8.kubernetes.api.model.ContainerPort;
 import io.fabric8.kubernetes.api.model.DeletionPropagation;
@@ -21,6 +24,8 @@ import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.SecretVolumeSourceBuilder;
 import io.fabric8.kubernetes.api.model.StatusDetails;
+import io.fabric8.kubernetes.api.model.Toleration;
+import io.fabric8.kubernetes.api.model.TolerationBuilder;
 import io.fabric8.kubernetes.api.model.Volume;
 import io.fabric8.kubernetes.api.model.VolumeBuilder;
 import io.fabric8.kubernetes.api.model.VolumeMount;
@@ -82,6 +87,8 @@ public class AsyncOrchestratorPodProcess implements KubePod {
   private final String schedulerName;
   private final MetricClient metricClient;
   private final String launcherType;
+  private final JobOutputDocStore jobOutputDocStore;
+  private final String workloadId;
 
   public AsyncOrchestratorPodProcess(
                                      final KubePodInfo kubePodInfo,
@@ -98,7 +105,9 @@ public class AsyncOrchestratorPodProcess implements KubePod {
                                      final String serviceAccount,
                                      final String schedulerName,
                                      final MetricClient metricClient,
-                                     final String launcherType) {
+                                     final String launcherType,
+                                     final JobOutputDocStore jobOutputDocStore,
+                                     final String workloadId) {
     this.kubePodInfo = kubePodInfo;
     this.documentStoreClient = documentStoreClient;
     this.kubernetesClient = kubernetesClient;
@@ -115,6 +124,8 @@ public class AsyncOrchestratorPodProcess implements KubePod {
     this.schedulerName = schedulerName;
     this.metricClient = metricClient;
     this.launcherType = launcherType;
+    this.jobOutputDocStore = jobOutputDocStore;
+    this.workloadId = workloadId;
   }
 
   /**
@@ -124,12 +135,20 @@ public class AsyncOrchestratorPodProcess implements KubePod {
    */
   public Optional<String> getOutput() {
     final var possibleOutput = getDocument(AsyncKubePodStatus.SUCCEEDED.name());
-
-    if (possibleOutput.isPresent() && possibleOutput.get().isBlank()) {
-      return Optional.empty();
-    } else {
+    if (possibleOutput.isPresent() && !possibleOutput.get().isBlank()) {
       return possibleOutput;
     }
+
+    try {
+      final var possibleWorkloadOutput = jobOutputDocStore.readSyncOutput(workloadId).map(Jsons::serialize);
+      if (possibleWorkloadOutput.isPresent() && !possibleWorkloadOutput.get().isBlank()) {
+        return possibleWorkloadOutput;
+      }
+    } catch (DocStoreAccessException e) {
+      throw new RuntimeException("Unable to access workload doc store", e);
+    }
+
+    return Optional.empty();
   }
 
   /**
@@ -413,7 +432,8 @@ public class AsyncOrchestratorPodProcess implements KubePod {
                      final ResourceRequirements resourceRequirements,
                      final Map<String, String> fileMap,
                      final Map<Integer, Integer> portMap,
-                     final Map<String, String> nodeSelectors) {
+                     final Map<String, String> nodeSelectors,
+                     final List<TolerationPOJO> tolerations) {
     final List<Volume> volumes = new ArrayList<>();
     final List<VolumeMount> volumeMounts = new ArrayList<>();
     final List<EnvVar> envVars = new ArrayList<>();
@@ -523,6 +543,7 @@ public class AsyncOrchestratorPodProcess implements KubePod {
         .withInitContainers(initContainer)
         .withVolumes(volumes)
         .withNodeSelector(nodeSelectors)
+        .withTolerations(buildPodTolerations(tolerations))
         .endSpec()
         .build();
 
@@ -562,7 +583,20 @@ public class AsyncOrchestratorPodProcess implements KubePod {
     copyFilesToKubeConfigVolumeMain(createdPod, updatedFileMap);
   }
 
-  private static void copyFilesToKubeConfigVolumeMain(final Pod podDefinition, final Map<String, String> files) {
+  private Toleration[] buildPodTolerations(final List<TolerationPOJO> tolerations) {
+    if (tolerations == null || tolerations.isEmpty()) {
+      return null;
+    }
+    return tolerations.stream().map(workerPodToleration -> new TolerationBuilder()
+        .withKey(workerPodToleration.getKey())
+        .withEffect(workerPodToleration.getEffect())
+        .withOperator(workerPodToleration.getOperator())
+        .withValue(workerPodToleration.getValue())
+        .build())
+        .toArray(Toleration[]::new);
+  }
+
+  private void copyFilesToKubeConfigVolumeMain(final Pod podDefinition, final Map<String, String> files) {
     final List<Map.Entry<String, String>> fileEntries = new ArrayList<>(files.entrySet());
 
     // copy this file last to indicate that the copy has completed
@@ -594,6 +628,7 @@ public class AsyncOrchestratorPodProcess implements KubePod {
 
         log.info("kubectl cp complete, closing process");
       } catch (final IOException | InterruptedException e) {
+        metricClient.count(OssMetricsRegistry.ORCHESTRATOR_INIT_COPY_FAILURE, 1, new MetricAttribute(MetricTags.LAUNCHER, launcherType));
         throw new RuntimeException(e);
       } finally {
         if (tmpFile != null) {

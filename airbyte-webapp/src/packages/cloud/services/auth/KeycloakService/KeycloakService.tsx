@@ -1,6 +1,5 @@
 import isEqual from "lodash/isEqual";
-import { User, WebStorageStateStore } from "oidc-client-ts";
-import { UserManager } from "oidc-client-ts";
+import { User, WebStorageStateStore, UserManager } from "oidc-client-ts";
 import {
   MutableRefObject,
   PropsWithChildren,
@@ -14,9 +13,9 @@ import {
   useState,
 } from "react";
 
-import { config } from "config";
 import { useGetOrCreateUser } from "core/api";
-import { UserRead } from "core/request/AirbyteClient";
+import { UserRead } from "core/api/types/AirbyteClient";
+import { config } from "core/config";
 
 const DEFAULT_KEYCLOAK_REALM = "airbyte";
 const DEFAULT_KEYCLOAK_CLIENT_ID = "airbyte-webapp";
@@ -127,7 +126,7 @@ export const KeycloakService: React.FC<PropsWithChildren> = ({ children }) => {
           keycloakUser = await userManager.signinCallback();
           clearSsoSearchParams();
           // Otherwise, check if there is a session currently
-        } else if ((keycloakUser ??= await userManager.getUser())) {
+        } else if ((keycloakUser ??= await userManager.signinSilent())) {
           // Initialize the access token ref with a value
           keycloakAccessTokenRef.current = keycloakUser.access_token;
           const airbyteUser = await getAirbyteUser({

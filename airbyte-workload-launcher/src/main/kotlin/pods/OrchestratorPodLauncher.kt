@@ -6,20 +6,32 @@ import io.airbyte.featureflag.ANONYMOUS
 import io.airbyte.featureflag.Connection
 import io.airbyte.featureflag.FeatureFlagClient
 import io.airbyte.featureflag.UseCustomK8sScheduler
+import io.airbyte.metrics.lib.MetricAttribute
+import io.airbyte.metrics.lib.MetricClient
+import io.airbyte.metrics.lib.OssMetricsRegistry
 import io.airbyte.workers.process.KubePodInfo
 import io.airbyte.workers.process.KubePodProcess
 import io.airbyte.workers.process.KubePodResourceHelper
+import io.airbyte.workload.launcher.pods.OrchestratorPodLauncher.Constants.KUBECTL_COMPLETED_VALUE
+import io.airbyte.workload.launcher.pods.OrchestratorPodLauncher.Constants.KUBECTL_PHASE_FIELD_NAME
+import io.airbyte.workload.launcher.pods.OrchestratorPodLauncher.Constants.MAX_DELETION_TIMEOUT
 import io.fabric8.kubernetes.api.model.ContainerBuilder
 import io.fabric8.kubernetes.api.model.ContainerPort
+import io.fabric8.kubernetes.api.model.DeletionPropagation
 import io.fabric8.kubernetes.api.model.EnvVar
 import io.fabric8.kubernetes.api.model.Pod
 import io.fabric8.kubernetes.api.model.PodBuilder
+import io.fabric8.kubernetes.api.model.PodList
 import io.fabric8.kubernetes.api.model.SecretVolumeSourceBuilder
+import io.fabric8.kubernetes.api.model.StatusDetails
 import io.fabric8.kubernetes.api.model.Volume
 import io.fabric8.kubernetes.api.model.VolumeBuilder
 import io.fabric8.kubernetes.api.model.VolumeMount
 import io.fabric8.kubernetes.api.model.VolumeMountBuilder
 import io.fabric8.kubernetes.client.KubernetesClient
+import io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable
+import io.fabric8.kubernetes.client.dsl.PodResource
+import io.fabric8.kubernetes.client.readiness.Readiness
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micronaut.context.annotation.Value
 import io.micronaut.core.util.StringUtils
@@ -27,9 +39,10 @@ import jakarta.inject.Named
 import jakarta.inject.Singleton
 import java.io.IOException
 import java.nio.file.Path
+import java.time.Duration
+import java.util.Objects
 import java.util.concurrent.TimeUnit
 import java.util.function.Predicate
-import kotlin.jvm.optionals.getOrDefault
 
 private val logger = KotlinLogging.logger {}
 
@@ -49,13 +62,14 @@ class OrchestratorPodLauncher(
   @Value("\${airbyte.worker.job.kube.serviceAccount}") private val serviceAccount: String?,
   @Named("orchestratorEnvVars") private val envVars: List<EnvVar>,
   @Named("orchestratorContainerPorts") private val containerPorts: List<ContainerPort>,
-  @Named("orchestratorAnnotations") private val annotations: Map<String, String>,
+  private val metricClient: MetricClient,
 ) {
   fun create(
     allLabels: Map<String, String>,
     resourceRequirements: ResourceRequirements?,
     nodeSelectors: Map<String, String>,
     kubePodInfo: KubePodInfo,
+    annotations: Map<String, String>,
   ): Pod {
     val volumes: MutableList<Volume> = ArrayList()
     val volumeMounts: MutableList<VolumeMount> = ArrayList()
@@ -186,50 +200,90 @@ class OrchestratorPodLauncher(
         .build()
 
     // should only create after the kubernetes API creates the pod
-    return kubernetesClient.pods()
-      .inNamespace(kubePodInfo.namespace)
-      .resource(podToCreate)
-      .serverSideApply()
+    return runKubeCommand(
+      {
+        kubernetesClient.pods()
+          .inNamespace(kubePodInfo.namespace)
+          .resource(podToCreate)
+          .serverSideApply()
+      },
+      "pod_create",
+    )
   }
 
-  fun waitForPodsWithLabels(labels: Map<String, String>) {
-    kubernetesClient.pods()
-      .inNamespace(namespace)
-      .withLabels(labels)
-      .waitUntilCondition(
-        { p: Pod ->
-          (
-            p.status.initContainerStatuses.isNotEmpty() &&
-              p.status.initContainerStatuses[0].state.waiting == null
+  fun waitForPodInit(
+    labels: Map<String, String>,
+    waitDuration: Duration,
+  ) {
+    runKubeCommand(
+      {
+        kubernetesClient.pods()
+          .inNamespace(namespace)
+          .withLabels(labels)
+          .waitUntilCondition(
+            { p: Pod ->
+              (
+                p.status.initContainerStatuses.isNotEmpty() &&
+                  p.status.initContainerStatuses[0].state.waiting == null
+              )
+            },
+            waitDuration.toMinutes(),
+            TimeUnit.MINUTES,
           )
-        },
-        TIMEOUT_VALUE,
-        TIMEOUT_UNITS,
-      )
+      },
+      "wait",
+    )
 
     val pods =
-      kubernetesClient.pods()
-        .inNamespace(namespace)
-        .withLabels(labels)
-        .list()
-        .items
+      runKubeCommand(
+        {
+          kubernetesClient.pods()
+            .inNamespace(namespace)
+            .withLabels(labels)
+            .list()
+            .items
+        },
+        "list",
+      )
 
     if (pods.isEmpty()) {
       throw RuntimeException("No pods found for labels: $labels. Nothing to wait for.")
     }
 
-    val allPodsContainersRunning =
-      kubernetesClient.pods()
-        .inNamespace(namespace)
-        .withLabels(labels)
-        .list()
-        .items
-        .stream()
-        .allMatch { it.status.initContainerStatuses.stream().findFirst().map { it.state.running != null }.getOrDefault(false) }
+    val containerState =
+      pods[0]
+        .status
+        .initContainerStatuses[0]
+        .state
 
-    if (!allPodsContainersRunning) {
-      throw RuntimeException("All pods' containers for labels: $labels were not running after: $TIMEOUT_VALUE $TIMEOUT_UNITS")
+    if (containerState.running == null) {
+      throw RuntimeException(
+        "Init container for Pod with labels: $labels was not in a running state after: ${waitDuration.toMinutes()} ${TimeUnit.MINUTES}. " +
+          "Actual container state: $containerState.",
+      )
     }
+  }
+
+  fun waitForPodReadyOrTerminal(
+    labels: Map<String, String>,
+    waitDuration: Duration,
+  ) {
+    runKubeCommand(
+      {
+        kubernetesClient.pods()
+          .inNamespace(namespace)
+          .withLabels(labels)
+          .waitUntilCondition(
+            { p: Pod? ->
+              Objects.nonNull(p) &&
+                (Readiness.getInstance().isReady(p) || KubePodResourceHelper.isTerminal(p))
+            },
+            waitDuration.toMinutes(),
+            TimeUnit.MINUTES,
+          )
+      },
+      "wait",
+    )
   }
 
   fun copyFilesToKubeConfigVolumeMain(
@@ -259,7 +313,13 @@ class OrchestratorPodLauncher(
             containerPath,
             KubePodProcess.INIT_CONTAINER_NAME,
           )
-        proc = Runtime.getRuntime().exec(command)
+        proc =
+          runKubeCommand(
+            {
+              Runtime.getRuntime().exec(command)
+            },
+            "kubectl_cp",
+          )
         val exitCode = proc.waitFor()
         if (exitCode != 0) {
           throw IOException("kubectl cp failed with exit code $exitCode")
@@ -275,32 +335,89 @@ class OrchestratorPodLauncher(
     }
   }
 
-  fun podsExistForLabels(labels: Map<String, String>): Boolean {
+  fun podsExist(labels: Map<String, String>): Boolean {
     try {
-      return kubernetesClient.pods()
-        .inNamespace(namespace)
-        .withLabels(labels)
-        .list()
-        .items
-        .stream()
-        .filter(
-          Predicate<Pod> { kubePod: Pod? ->
-            !KubePodResourceHelper.isTerminal(
-              kubePod,
+      return runKubeCommand(
+        {
+          kubernetesClient.pods()
+            .inNamespace(namespace)
+            .withLabels(labels)
+            .list()
+            .items
+            .stream()
+            .filter(
+              Predicate<Pod> { kubePod: Pod? ->
+                !KubePodResourceHelper.isTerminal(
+                  kubePod,
+                )
+              },
             )
-          },
-        )
-        .findAny()
-        .isPresent
+            .findAny()
+            .isPresent
+        },
+        "list",
+      )
     } catch (e: Exception) {
       logger.warn(e) { "Could not find pods running for $labels, presuming no pods are running" }
       return false
     }
   }
 
-  // TODO: We need to make sure the wait times are the same for the orchestrator wait code
-  companion object {
-    const val TIMEOUT_VALUE = 5L
-    val TIMEOUT_UNITS = TimeUnit.MINUTES
+  fun deleteActivePods(labels: Map<String, String>): List<StatusDetails> {
+    return runKubeCommand(
+      {
+        val statuses =
+          listActivePods(labels)
+            .list()
+            .items
+            .flatMap { p ->
+              kubernetesClient.pods()
+                .inNamespace(namespace)
+                .resource(p)
+                .withPropagationPolicy(DeletionPropagation.FOREGROUND)
+                .delete()
+            }
+
+        if (statuses.isEmpty()) {
+          return@runKubeCommand statuses
+        }
+
+        listActivePods(labels)
+          .waitUntilCondition(Objects::isNull, MAX_DELETION_TIMEOUT, TimeUnit.SECONDS)
+
+        statuses
+      },
+      "delete",
+    )
+  }
+
+  private fun listActivePods(labels: Map<String, String>): FilterWatchListDeletable<Pod, PodList, PodResource> {
+    return kubernetesClient.pods()
+      .inNamespace(namespace)
+      .withLabels(labels)
+      .withoutField(KUBECTL_PHASE_FIELD_NAME, KUBECTL_COMPLETED_VALUE) // filters out completed pods
+  }
+
+  private fun <T> runKubeCommand(
+    kubeCommand: () -> T,
+    commandName: String,
+  ): T {
+    try {
+      return kubeCommand()
+    } catch (e: Exception) {
+      val attributes: List<MetricAttribute> = listOf(MetricAttribute("operation", commandName))
+      val attributesArray = attributes.toTypedArray<MetricAttribute>()
+      metricClient.count(OssMetricsRegistry.WORKLOAD_LAUNCHER_KUBE_ERROR, 1, *attributesArray)
+
+      throw e
+    }
+  }
+
+  object Constants {
+    // Wait why is this named like this?
+    // Explanation: Kubectl displays "Completed" but the selector expects "Succeeded"
+    const val KUBECTL_COMPLETED_VALUE = "Succeeded"
+    const val KUBECTL_PHASE_FIELD_NAME = "status.phase"
+    const val MAX_DELETION_TIMEOUT = 45L
   }
 }

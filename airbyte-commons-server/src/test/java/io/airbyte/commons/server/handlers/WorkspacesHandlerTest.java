@@ -17,6 +17,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.collect.Lists;
+import io.airbyte.analytics.TrackingClient;
 import io.airbyte.api.model.generated.ConnectionIdRequestBody;
 import io.airbyte.api.model.generated.ConnectionRead;
 import io.airbyte.api.model.generated.ConnectionReadList;
@@ -30,6 +31,7 @@ import io.airbyte.api.model.generated.SourceReadList;
 import io.airbyte.api.model.generated.WebhookConfigRead;
 import io.airbyte.api.model.generated.WebhookConfigWrite;
 import io.airbyte.api.model.generated.WorkspaceCreate;
+import io.airbyte.api.model.generated.WorkspaceCreateWithId;
 import io.airbyte.api.model.generated.WorkspaceGiveFeedback;
 import io.airbyte.api.model.generated.WorkspaceIdRequestBody;
 import io.airbyte.api.model.generated.WorkspaceOrganizationInfoRead;
@@ -37,6 +39,7 @@ import io.airbyte.api.model.generated.WorkspaceRead;
 import io.airbyte.api.model.generated.WorkspaceReadList;
 import io.airbyte.api.model.generated.WorkspaceUpdate;
 import io.airbyte.api.model.generated.WorkspaceUpdateName;
+import io.airbyte.api.model.generated.WorkspaceUpdateOrganization;
 import io.airbyte.commons.json.Jsons;
 import io.airbyte.commons.server.converters.NotificationConverter;
 import io.airbyte.commons.server.converters.NotificationSettingsConverter;
@@ -56,7 +59,7 @@ import io.airbyte.config.persistence.PermissionPersistence;
 import io.airbyte.config.persistence.WorkspacePersistence;
 import io.airbyte.config.secrets.SecretsRepositoryWriter;
 import io.airbyte.config.secrets.persistence.SecretPersistence;
-import io.airbyte.validation.json.JsonSchemaValidator;
+import io.airbyte.data.services.WorkspaceService;
 import io.airbyte.validation.json.JsonValidationException;
 import java.io.IOException;
 import java.util.Collections;
@@ -83,6 +86,10 @@ class WorkspacesHandlerTest {
   private static final JsonNode PERSISTED_WEBHOOK_CONFIGS = Jsons.deserialize(
       String.format("{\"webhookConfigs\": [{\"id\": \"%s\", \"name\": \"%s\", \"authToken\": {\"_secret\": \"a-secret_v1\"}}]}",
           WEBHOOK_CONFIG_ID, TEST_NAME));
+
+  private static final JsonNode SECRET_WEBHOOK_CONFIGS = Jsons.deserialize(
+      String.format("{\"webhookConfigs\": [{\"id\": \"%s\", \"name\": \"%s\", \"authToken\": \"%s\"}]}",
+          WEBHOOK_CONFIG_ID, TEST_NAME, TEST_AUTH_TOKEN));
   private static final String TEST_EMAIL = "test@airbyte.io";
   private static final String TEST_WORKSPACE_NAME = "test workspace";
   private static final String TEST_WORKSPACE_SLUG = "test-workspace";
@@ -103,7 +110,9 @@ class WorkspacesHandlerTest {
 
   private PermissionPersistence permissionPersistence;
   private WorkspacePersistence workspacePersistence;
+  private WorkspaceService workspaceService;
   private OrganizationPersistence organizationPersistence;
+  private TrackingClient trackingClient;
 
   @SuppressWarnings("unchecked")
   @BeforeEach
@@ -113,16 +122,19 @@ class WorkspacesHandlerTest {
     organizationPersistence = mock(OrganizationPersistence.class);
     secretPersistence = mock(SecretPersistence.class);
     permissionPersistence = mock(PermissionPersistence.class);
-    secretsRepositoryWriter = new SecretsRepositoryWriter(configRepository, new JsonSchemaValidator(), secretPersistence);
+    secretsRepositoryWriter = new SecretsRepositoryWriter(secretPersistence);
     connectionsHandler = mock(ConnectionsHandler.class);
     destinationHandler = mock(DestinationHandler.class);
     sourceHandler = mock(SourceHandler.class);
     uuidSupplier = mock(Supplier.class);
+    workspaceService = mock(WorkspaceService.class);
+    trackingClient = mock(TrackingClient.class);
 
     workspace = generateWorkspace();
     workspacesHandler =
         new WorkspacesHandler(configRepository, workspacePersistence, organizationPersistence, secretsRepositoryWriter, permissionPersistence,
-            connectionsHandler, destinationHandler, sourceHandler, uuidSupplier);
+            connectionsHandler,
+            destinationHandler, sourceHandler, uuidSupplier, workspaceService, trackingClient);
   }
 
   private StandardWorkspace generateWorkspace() {
@@ -268,6 +280,56 @@ class WorkspacesHandlerTest {
         .organizationId(ORGANIZATION_ID);
 
     assertEquals(expectedRead, actualRead);
+  }
+
+  @Test
+  void testCreateWorkspaceIfNotExist() throws JsonValidationException, IOException, ConfigNotFoundException {
+    workspace.withWebhookOperationConfigs(PERSISTED_WEBHOOK_CONFIGS);
+    when(configRepository.getStandardWorkspaceNoSecrets(any(), eq(false))).thenReturn(workspace);
+
+    final UUID uuid = UUID.randomUUID();
+    when(uuidSupplier.get()).thenReturn(uuid);
+
+    configRepository.writeStandardWorkspaceNoSecrets(workspace);
+
+    final UUID notSuppliedUUID = UUID.randomUUID();
+
+    final WorkspaceCreateWithId workspaceCreateWithId = new WorkspaceCreateWithId()
+        .id(notSuppliedUUID)
+        .name(NEW_WORKSPACE)
+        .email(TEST_EMAIL)
+        .news(false)
+        .anonymousDataCollection(false)
+        .securityUpdates(false)
+        .notifications(List.of(generateApiNotification()))
+        .notificationSettings(generateApiNotificationSettings())
+        .defaultGeography(GEOGRAPHY_US)
+        .webhookConfigs(List.of(new WebhookConfigWrite().name(TEST_NAME).authToken(TEST_AUTH_TOKEN)))
+        .organizationId(ORGANIZATION_ID);
+
+    when(secretPersistence.read(any())).thenReturn("");
+
+    final WorkspaceRead actualRead = workspacesHandler.createWorkspaceIfNotExist(workspaceCreateWithId);
+    final WorkspaceRead secondActualRead = workspacesHandler.createWorkspaceIfNotExist(workspaceCreateWithId);
+    final WorkspaceRead expectedRead = new WorkspaceRead()
+        .workspaceId(notSuppliedUUID)
+        .customerId(uuid)
+        .email(TEST_EMAIL)
+        .name(NEW_WORKSPACE)
+        .slug("new-workspace")
+        .initialSetupComplete(false)
+        .displaySetupWizard(false)
+        .news(false)
+        .anonymousDataCollection(false)
+        .securityUpdates(false)
+        .notifications(List.of(generateApiNotification()))
+        .notificationSettings(generateApiNotificationSettingsWithDefaultValue())
+        .defaultGeography(GEOGRAPHY_US)
+        .webhookConfigs(List.of(new WebhookConfigRead().id(uuid).name(TEST_NAME)))
+        .organizationId(ORGANIZATION_ID);
+
+    assertEquals(expectedRead, actualRead);
+    assertEquals(expectedRead, secondActualRead);
   }
 
   @Test
@@ -535,7 +597,8 @@ class WorkspacesHandlerTest {
   }
 
   @Test
-  void testUpdateWorkspace() throws JsonValidationException, ConfigNotFoundException, IOException {
+  void testUpdateWorkspace()
+      throws JsonValidationException, ConfigNotFoundException, IOException, io.airbyte.data.exceptions.ConfigNotFoundException {
     final io.airbyte.api.model.generated.Notification apiNotification = generateApiNotification();
     apiNotification.getSlackConfiguration().webhook(UPDATED);
     final WorkspaceUpdate workspaceUpdate = new WorkspaceUpdate()
@@ -599,7 +662,25 @@ class WorkspacesHandlerTest {
         .webhookConfigs(List.of(new WebhookConfigRead().name(TEST_NAME).id(WEBHOOK_CONFIG_ID)))
         .organizationId(ORGANIZATION_ID);
 
-    verify(configRepository).writeStandardWorkspaceNoSecrets(expectedWorkspace);
+    final StandardWorkspace expectedWorkspaceWithSecrets = new StandardWorkspace()
+        .withWorkspaceId(workspace.getWorkspaceId())
+        .withCustomerId(workspace.getCustomerId())
+        .withEmail(TEST_EMAIL)
+        .withName(TEST_WORKSPACE_NAME)
+        .withSlug(TEST_WORKSPACE_SLUG)
+        .withAnonymousDataCollection(true)
+        .withSecurityUpdates(false)
+        .withNews(false)
+        .withInitialSetupComplete(true)
+        .withDisplaySetupWizard(false)
+        .withTombstone(false)
+        .withNotifications(List.of(expectedNotification))
+        .withNotificationSettings(generateNotificationSettings())
+        .withDefaultGeography(Geography.US)
+        .withWebhookOperationConfigs(SECRET_WEBHOOK_CONFIGS)
+        .withOrganizationId(ORGANIZATION_ID);
+
+    verify(workspaceService).writeWorkspaceWithSecrets(expectedWorkspaceWithSecrets);
 
     assertEquals(expectedWorkspaceRead, actualWorkspaceRead);
   }
@@ -693,6 +774,41 @@ class WorkspacesHandlerTest {
   }
 
   @Test
+  @DisplayName("Update organization in workspace")
+  void testWorkspaceUpdateOrganization()
+      throws JsonValidationException, ConfigNotFoundException, IOException, io.airbyte.data.exceptions.ConfigNotFoundException {
+    final UUID newOrgId = UUID.randomUUID();
+    final WorkspaceUpdateOrganization workspaceUpdateOrganization = new WorkspaceUpdateOrganization()
+        .workspaceId(workspace.getWorkspaceId())
+        .organizationId(newOrgId);
+    final StandardWorkspace expectedWorkspace = Jsons.clone(workspace).withOrganizationId(newOrgId);
+    when(workspaceService.getStandardWorkspaceNoSecrets(workspace.getWorkspaceId(), false))
+        .thenReturn(expectedWorkspace);
+    when(configRepository.getStandardWorkspaceNoSecrets(workspace.getWorkspaceId(), false))
+        .thenReturn(expectedWorkspace);
+    // The same as the original workspace, with only the organization ID updated.
+    final WorkspaceRead expectedWorkspaceRead = new WorkspaceRead()
+        .workspaceId(workspace.getWorkspaceId())
+        .customerId(workspace.getCustomerId())
+        .email(workspace.getEmail())
+        .name(workspace.getName())
+        .slug(workspace.getSlug())
+        .initialSetupComplete(workspace.getInitialSetupComplete())
+        .displaySetupWizard(workspace.getDisplaySetupWizard())
+        .news(workspace.getNews())
+        .anonymousDataCollection(false)
+        .securityUpdates(workspace.getSecurityUpdates())
+        .notifications(NotificationConverter.toApiList(workspace.getNotifications()))
+        .notificationSettings(NotificationSettingsConverter.toApi(workspace.getNotificationSettings()))
+        .defaultGeography(GEOGRAPHY_AUTO)
+        .organizationId(newOrgId);
+
+    final WorkspaceRead actualWorkspaceRead = workspacesHandler.updateWorkspaceOrganization(workspaceUpdateOrganization);
+    verify(workspaceService).writeStandardWorkspaceNoSecrets(expectedWorkspace);
+    assertEquals(expectedWorkspaceRead, actualWorkspaceRead);
+  }
+
+  @Test
   @DisplayName("Partial patch update should preserve unchanged fields")
   void testWorkspacePatchUpdate() throws JsonValidationException, ConfigNotFoundException, IOException {
     final String expectedNewEmail = "expected-new-email@example.com";
@@ -738,11 +854,13 @@ class WorkspacesHandlerTest {
   }
 
   @Test
-  void testWorkspaceIsWrittenThroughSecretsWriter() throws JsonValidationException, IOException {
+  void testWorkspaceIsWrittenThroughSecretsWriter()
+      throws JsonValidationException, IOException, ConfigNotFoundException, io.airbyte.data.exceptions.ConfigNotFoundException {
     secretsRepositoryWriter = mock(SecretsRepositoryWriter.class);
     workspacesHandler =
-        new WorkspacesHandler(configRepository, workspacePersistence, organizationPersistence, secretsRepositoryWriter, permissionPersistence,
-            connectionsHandler, destinationHandler, sourceHandler, uuidSupplier);
+        new WorkspacesHandler(configRepository, workspacePersistence, organizationPersistence,
+            secretsRepositoryWriter, permissionPersistence, connectionsHandler,
+            destinationHandler, sourceHandler, uuidSupplier, workspaceService, trackingClient);
 
     final UUID uuid = UUID.randomUUID();
     when(uuidSupplier.get()).thenReturn(uuid);
@@ -775,7 +893,7 @@ class WorkspacesHandlerTest {
         .webhookConfigs(Collections.emptyList());
 
     assertEquals(expectedRead, actualRead);
-    verify(secretsRepositoryWriter, times(1)).writeWorkspace(any());
+    verify(workspaceService, times(1)).writeWorkspaceWithSecrets(any());
   }
 
   @Test

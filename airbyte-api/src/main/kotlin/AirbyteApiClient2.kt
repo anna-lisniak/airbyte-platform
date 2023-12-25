@@ -8,6 +8,7 @@ import dev.failsafe.RetryPolicy
 import io.airbyte.api.client2.generated.AttemptApi
 import io.airbyte.api.client2.generated.ConnectionApi
 import io.airbyte.api.client2.generated.ConnectorBuilderProjectApi
+import io.airbyte.api.client2.generated.DeploymentMetadataApi
 import io.airbyte.api.client2.generated.DestinationApi
 import io.airbyte.api.client2.generated.DestinationDefinitionApi
 import io.airbyte.api.client2.generated.DestinationDefinitionSpecificationApi
@@ -15,6 +16,7 @@ import io.airbyte.api.client2.generated.HealthApi
 import io.airbyte.api.client2.generated.JobRetryStatesApi
 import io.airbyte.api.client2.generated.JobsApi
 import io.airbyte.api.client2.generated.OperationApi
+import io.airbyte.api.client2.generated.SecretsPersistenceConfigApi
 import io.airbyte.api.client2.generated.SourceApi
 import io.airbyte.api.client2.generated.SourceDefinitionApi
 import io.airbyte.api.client2.generated.SourceDefinitionSpecificationApi
@@ -57,6 +59,7 @@ class AirbyteApiClient2
   ) {
     val connectionApi = ConnectionApi(basePath = basePath, client = httpClient, policy = policy)
     val connectorBuilderProjectApi = ConnectorBuilderProjectApi(basePath = basePath, client = httpClient, policy = policy)
+    val deploymentMetadataApi = DeploymentMetadataApi(basePath = basePath, client = httpClient, policy = policy)
     val destinationDefinitionApi = DestinationDefinitionApi(basePath = basePath, client = httpClient, policy = policy)
     val destinationApi = DestinationApi(basePath = basePath, client = httpClient, policy = policy)
     val destinationSpecificationApi = DestinationDefinitionSpecificationApi(basePath = basePath, client = httpClient, policy = policy)
@@ -71,4 +74,5 @@ class AirbyteApiClient2
     val attemptApi = AttemptApi(basePath = basePath, client = httpClient, policy = policy)
     val stateApi = StateApi(basePath = basePath, client = httpClient, policy = policy)
     val streamStatusesApi = StreamStatusesApi(basePath = basePath, client = httpClient, policy = policy)
+    val secretPersistenceConfigApi = SecretsPersistenceConfigApi(basePath = basePath, client = httpClient, policy = policy)
   }

@@ -2,41 +2,23 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 
 import { useCurrentWorkspaceId } from "area/workspace/utils";
-import { webBackendRevokeUserFromWorkspace } from "core/api/generated/CloudApi";
-import { webBackendResendWithSigninLink } from "core/api/generated/CloudApi";
-import { webBackendInviteUserToWorkspaceWithSignInLink } from "core/api/generated/CloudApi";
-import { webBackendListUsersByWorkspace } from "core/api/generated/CloudApi";
-import { SCOPE_WORKSPACE } from "services/Scope";
 
 import {
-  webBackendCreateUser,
-  getUserByAuthId,
-  getUserByEmail,
+  webBackendRevokeUserFromWorkspace,
+  webBackendResendWithSigninLink,
+  webBackendInviteUserToWorkspaceWithSignInLink,
+  webBackendListUsersByWorkspace,
   updateUser,
   webBackendRevokeUserSession,
 } from "../../generated/CloudApi";
-import { UserUpdate, UserCreate } from "../../types/CloudApi";
+import { SCOPE_WORKSPACE } from "../../scopes";
+import { UserUpdate } from "../../types/CloudApi";
 import { useRequestOptions } from "../../useRequestOptions";
 import { useSuspenseQuery } from "../../useSuspenseQuery";
 
 export const useGetUserService = () => {
   const requestOptions = useRequestOptions();
-
-  const getByEmail = useCallback((email: string) => getUserByEmail({ email }, requestOptions), [requestOptions]);
-
-  const getByAuthId = useCallback(
-    (authUserId: string) => getUserByAuthId({ authUserId }, requestOptions),
-    [requestOptions]
-  );
-
   const update = useCallback((params: UserUpdate) => updateUser(params, requestOptions), [requestOptions]);
-
-  const changeName = useCallback(
-    (authUserId: string, userId: string, name: string) => updateUser({ authUserId, userId, name }, requestOptions),
-    [requestOptions]
-  );
-
-  const create = useCallback((user: UserCreate) => webBackendCreateUser(user, requestOptions), [requestOptions]);
 
   const revokeUserSession = useCallback(() => webBackendRevokeUserSession(requestOptions), [requestOptions]);
 
@@ -80,29 +62,14 @@ export const useGetUserService = () => {
 
   return useMemo(
     () => ({
-      getByEmail,
-      getByAuthId,
       update,
-      changeName,
-      create,
       revokeUserSession,
       remove,
       resendWithSignInLink,
       invite,
       listByWorkspaceId,
     }),
-    [
-      getByEmail,
-      getByAuthId,
-      update,
-      changeName,
-      create,
-      revokeUserSession,
-      remove,
-      resendWithSignInLink,
-      invite,
-      listByWorkspaceId,
-    ]
+    [update, revokeUserSession, remove, resendWithSignInLink, invite, listByWorkspaceId]
   );
 };
 

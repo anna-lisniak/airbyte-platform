@@ -2,9 +2,35 @@ micronaut:
   application:
     name: airbyte-workload-api-server
   executors:
-    health:
+    io:
       type: fixed
-      n-threads: ${HEALTH_TASK_EXECUTOR_THREADS:10}
+      n-threads: ${IO_TASK_EXECUTOR_THREADS:10} # Match the data source max pool size below
+    workload:
+      type: fixed
+      n-threads: ${WORKLOAD_TASK_EXECUTOR_THREADS:50}
+  metrics:
+    enabled: ${MICROMETER_METRICS_ENABLED:false}
+    binders:
+      netty:
+        bytebuf-allocators:
+          enabled: true
+        channels:
+          enabled: true
+        queues:
+          enabled: true
+      web:
+        enabled: true
+        server:
+          percentiles: "0.95"
+        client:
+          percentiles: "0.95"
+    export:
+      statsd:
+        enabled: ${MICROMETER_METRICS_ENABLED:false}
+        flavor: ${MICROMETER_METRICS_STATSD_FLAVOR:}
+        step: ${MICROMETER_METRICS_STEP:PT30S}
+        host: ${STATSD_HOST:}
+        port: ${STATSD_PORT:}
   security:
     authentication-provider-strategy: ALL
     enabled: true
@@ -27,6 +53,12 @@ micronaut:
         enabled: ${HTTP_ACCESS_LOG_ENABLED:true}
     idle-timeout: ${HTTP_IDLE_TIMEOUT:5m}
 
+airbyte:
+  feature-flag:
+    client: ${FEATURE_FLAG_CLIENT:}
+    path: ${FEATURE_FLAG_PATH:/flags}
+    api-key: ${LAUNCHDARKLY_KEY:}
+
 endpoints:
   beans:
     enabled: true
@@ -44,6 +76,9 @@ endpoints:
     sensitive: true
   loggers:
     enabled: true
+    sensitive: false
+  metrics:
+    enabled: ${MICROMETER_METRICS_ENABLED:false}
     sensitive: false
   refresh:
     enabled: false
@@ -89,6 +124,7 @@ temporal:
 
 logger:
   levels:
+    # io.micronaut.data.query: TRACE
     #   Uncomment to help resolve issues with conditional beans
     # io.micronaut.context.condition: DEBUG
 #   Uncomment to help resolve issues with security beans
@@ -96,3 +132,6 @@ logger:
 #   Uncomment to help resolve issues with micronaut data
 #      com.zaxxer.hikari.HikariConfig: DEBUG
 #      com.zaxxer.hikari: TRACE
+
+jackson:
+  serialization-inclusion: always

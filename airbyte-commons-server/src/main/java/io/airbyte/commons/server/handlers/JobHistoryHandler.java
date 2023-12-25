@@ -45,6 +45,7 @@ import io.airbyte.persistence.job.JobPersistence;
 import io.airbyte.persistence.job.JobPersistence.JobAttemptPair;
 import io.airbyte.persistence.job.models.Job;
 import io.airbyte.persistence.job.models.JobStatus;
+import io.airbyte.persistence.job.models.JobStatusSummary;
 import io.airbyte.validation.json.JsonValidationException;
 import jakarta.inject.Singleton;
 import java.io.IOException;
@@ -160,7 +161,12 @@ public class JobHistoryHandler {
       }
     }
 
-    final Long totalJobCount = jobPersistence.getJobCount(configTypes, configId);
+    final Long totalJobCount = jobPersistence.getJobCount(configTypes, configId,
+        request.getStatus() == null ? null : JobStatus.valueOf(request.getStatus().toString().toUpperCase()),
+        request.getCreatedAtStart(),
+        request.getCreatedAtEnd(),
+        request.getUpdatedAtStart(),
+        request.getUpdatedAtEnd());
     return new JobReadList().jobs(jobReads).totalJobCount(totalJobCount);
   }
 
@@ -311,10 +317,8 @@ public class JobHistoryHandler {
     return jobPersistence.getLastSyncJob(connectionId).map(JobConverter::getJobRead);
   }
 
-  public List<JobRead> getLatestSyncJobsForConnections(final List<UUID> connectionIds) throws IOException {
-    return jobPersistence.getLastSyncJobForConnections(connectionIds).stream()
-        .map(JobConverter::getJobRead)
-        .collect(Collectors.toList());
+  public List<JobStatusSummary> getLatestSyncJobsForConnections(final List<UUID> connectionIds) throws IOException {
+    return jobPersistence.getLastSyncJobForConnections(connectionIds);
   }
 
   public AttemptNormalizationStatusReadList getAttemptNormalizationStatuses(final JobIdRequestBody jobIdRequestBody) throws IOException {

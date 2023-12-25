@@ -28,6 +28,9 @@ import com.google.api.client.util.Preconditions;
  * - Add units at name end if applicable. This is especially relevant for time units.
  * <p>
  * - Include the time period in the name if the metric is meant to be run at a certain interval.
+ * <p>
+ * Note: These names are used as metric name prefixes. Changing these names will affect
+ * dashboard/alerts and our public Datadog integration. Please consult the platform teams if unsure.
  */
 public enum OssMetricsRegistry implements MetricsRegistry {
 
@@ -205,11 +208,19 @@ public enum OssMetricsRegistry implements MetricsRegistry {
   ORCHESTRATOR_OUT_OF_MEMORY(MetricEmittingApps.WORKER,
       "orchestrator_out_of_memory",
       "orchestrator out of memory error"),
+  ORCHESTRATOR_INIT_COPY_FAILURE(MetricEmittingApps.WORKER,
+      "orchestrator_init_copy_failure",
+      "init files failed to copy over to orchestrator"),
 
   OVERALL_JOB_RUNTIME_IN_LAST_HOUR_BY_TERMINAL_STATE_SECS(MetricEmittingApps.METRICS_REPORTER,
       "overall_job_runtime_in_last_hour_by_terminal_state_secs",
       "overall job runtime - scheduling and execution for all attempts - for jobs that reach terminal states in the last hour. "
           + "tagged by terminal states."),
+
+  RUNNING_PODS_FOUND_FOR_CONNECTION_ID(MetricEmittingApps.WORKER,
+      "running_pods_found_for_connection_id",
+      "whether we found pods running for a given connection id when attempting to start a sync for that connection id"),
+
   REPLICATION_BYTES_SYNCED(MetricEmittingApps.WORKER,
       "replication_bytes_synced",
       "number of bytes synced during replication"),
@@ -339,6 +350,18 @@ public enum OssMetricsRegistry implements MetricsRegistry {
   WORKFLOWS_HEALED(MetricEmittingApps.CRON,
       "workflows_healed",
       "number of workflow the self healing cron healed"),
+  WORKLOAD_MONITOR_RUN(MetricEmittingApps.CRON,
+      "workload_monitor_run",
+      "number of cron run for the workload_monitor"),
+  WORKLOAD_MONITOR_DONE(MetricEmittingApps.CRON,
+      "workload_monitor_done",
+      "number of cron completed run for the workload_monitor"),
+  WORKLOAD_MONITOR_DURATION(MetricEmittingApps.CRON,
+      "workload_monitor_duration",
+      "duration of a run of the workload_monitor"),
+  WORKLOADS_CANCEL(MetricEmittingApps.CRON,
+      "workload_cancel",
+      "number of workloads canceled"),
   NOTIFICATIONS_SENT(MetricEmittingApps.WORKER,
       "notifications_sent",
       "number of notifications sent"),
@@ -353,7 +376,10 @@ public enum OssMetricsRegistry implements MetricsRegistry {
       "Skip the line because of its size"),
   TOO_LONG_LINES_DISTRIBUTION(MetricEmittingApps.WORKER,
       "too_long_lines_distribution",
-      "Too long line distribution");
+      "Too long line distribution"),
+  WORKLOAD_LAUNCHER_KUBE_ERROR(MetricEmittingApps.WORKLOAD_LAUNCHER,
+      "workload_kube_error",
+      "Number of kube error in the workload launcher");
 
   private final MetricEmittingApp application;
   private final String metricName;
