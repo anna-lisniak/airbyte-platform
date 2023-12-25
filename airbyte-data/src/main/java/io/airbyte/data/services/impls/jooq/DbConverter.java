@@ -80,6 +80,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import org.jooq.Record;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Provides static methods for converting from repository layer results (often in the form of a jooq
@@ -158,12 +160,23 @@ public class DbConverter {
    * @param record db record
    * @return workspace
    */
+  private static final Logger logger = LoggerFactory.getLogger(DbConverter.class);
+
   public static StandardWorkspace buildStandardWorkspace(final Record record) {
+    // @SuppressWarnings("debug")
+    logger.info("buildStandardWorkspace");
     final List<Notification> notificationList = new ArrayList<>();
-    final List fetchedNotifications = Jsons.deserialize(record.get(WORKSPACE.NOTIFICATIONS).data(), List.class);
+    final String data = record.get(WORKSPACE.NOTIFICATIONS).data();
+    logger.info("fetchedNotifications " + data);
+    final List fetchedNotifications = Jsons.deserialize(data, List.class);
     for (final Object notification : fetchedNotifications) {
       notificationList.add(Jsons.convertValue(notification, Notification.class));
     }
+    logger.info("WORKSPACE.NOTIFICATION_SETTINGS " + WORKSPACE.NOTIFICATION_SETTINGS);
+    if (record.get(WORKSPACE.NOTIFICATION_SETTINGS) != null) {
+      logger.info("NOTIFICATION_SETTINGS " + Jsons.deserialize(record.get(WORKSPACE.NOTIFICATION_SETTINGS).data(), NotificationSettings.class));
+    }
+
     return new StandardWorkspace()
         .withWorkspaceId(record.get(WORKSPACE.ID))
         .withName(record.get(WORKSPACE.NAME))

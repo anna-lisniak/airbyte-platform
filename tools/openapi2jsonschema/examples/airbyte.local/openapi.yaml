@@ -2355,6 +2355,13 @@ components:
       required:
         - webhook
       type: object
+    ApiNotificationConfiguration:
+      properties:
+        webhook:
+          type: string
+      required:
+        - webhook
+      type: object
     SlugRequestBody:
       properties:
         slug:

@@ -61,7 +61,7 @@ public class NotificationsHandler {
       notificationClient = new SlackNotificationClient(toConfig(slackNotificationConfiguration));
     } else if (NotificationType.API.equals(notificationType)) {
       notificationClient =
-          new ApiNotificationClient(new io.airbyte.config.ApiNotificationConfiguration().withWebhook(slackNotificationConfiguration.getWebhook()));
+          new ApiNotificationClient(new io.airbyte.config.SlackNotificationConfiguration().withWebhook(slackNotificationConfiguration.getWebhook()));
     } else {
       return new NotificationRead().status(StatusEnum.FAILED);
     }

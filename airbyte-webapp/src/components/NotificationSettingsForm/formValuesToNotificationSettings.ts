@@ -21,6 +21,9 @@ export function formValuesToNotificationSettings(formValues: NotificationSetting
       notificationItem.slackConfiguration = {
         webhook: valueFromForm.slackWebhookLink,
       };
+      notificationItem.apiConfiguration = {
+        webhook: valueFromForm.slackWebhookLink,
+      };
     }
     notificationSettings[notificationKey] = notificationItem;
   });

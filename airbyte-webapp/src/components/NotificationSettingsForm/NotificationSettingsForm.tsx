@@ -12,7 +12,12 @@ import { Box } from "components/ui/Box";
 import { Text } from "components/ui/Text";
 
 import { useCurrentWorkspace, useTryNotificationWebhook } from "core/api";
-import { NotificationReadStatus, NotificationSettings, NotificationTrigger } from "core/request/AirbyteClient";
+import {
+  NotificationReadStatus,
+  NotificationSettings,
+  NotificationTrigger,
+  NotificationWebhookConfigValidationRequestBody,
+} from "core/request/AirbyteClient";
 import { FeatureItem, useFeature } from "core/services/features";
 import { isFulfilled } from "core/utils/promises";
 import { useAppMonitoringService } from "hooks/services/AppMonitoringService";
@@ -24,6 +29,11 @@ import { formValuesToNotificationSettings } from "./formValuesToNotificationSett
 import { NotificationItemField } from "./NotificationItemField";
 import styles from "./NotificationSettingsForm.module.scss";
 import { notificationSettingsToFormValues } from "./notificationSettingsToFormValues";
+
+export enum NotificationType {
+  API = "api",
+  SLACK = "slack",
+}
 
 export const NotificationSettingsForm: React.FC = () => {
   const emailNotificationsFeatureEnabled = useFeature(FeatureItem.EmailNotifications);
@@ -61,13 +71,14 @@ export const NotificationSettingsForm: React.FC = () => {
           if (!notification.slackWebhookLink) {
             return { key, isValid: false };
           }
-
-          // For all other webhook URLs, we need to validate them via our API
-          const webhookValidation = await testWebhook({
+          const body: NotificationWebhookConfigValidationRequestBody = {
             notificationTrigger: notificationTriggerMap[key],
             slackConfiguration: { webhook: notification.slackWebhookLink },
+            apiConfiguration: { webhook: notification.slackWebhookLink },
             notificationType: notification.api ? NotificationType.API : NotificationType.SLACK,
-          }).catch(() => ({ status: NotificationReadStatus.failed }));
+          };
+          // For all other webhook URLs, we need to validate them via our API
+          const webhookValidation = await testWebhook(body).catch(() => ({ status: NotificationReadStatus.failed }));
           return webhookValidation.status === NotificationReadStatus.succeeded
             ? { key, isValid: true }
             : { key, isValid: false };
@@ -92,7 +103,9 @@ export const NotificationSettingsForm: React.FC = () => {
   };
 
   const updateEmailNotifications = async (values: NotificationSettingsFormValues) => {
+    console.log("updateEmailNotifications");
     const newNotificationSettings = formValuesToNotificationSettings(values);
+    console.log({ newNotificationSettings });
     try {
       await updateNotificationSettings(newNotificationSettings);
       methods.reset(values);
@@ -177,16 +190,12 @@ export const NotificationSettingsForm: React.FC = () => {
   );
 };
 
-export enum NotificationType {
-  API = "api",
-  SLACK = "slack",
-}
-
 export interface NotificationItemFieldValue {
   slack: boolean;
   customerio: boolean;
   api: boolean;
   slackWebhookLink?: string;
+  apiWebhookLink?: string;
 }
 
 export interface NotificationSettingsFormValues {
@@ -208,6 +217,7 @@ const notificationItemSchema: SchemaOf<NotificationItemFieldValue> = yup.object(
     is: true,
     then: yup.string().required("form.empty.error"),
   }),
+  apiWebhookLink: yup.string(),
 });
 
 const validationSchema: SchemaOf<NotificationSettingsFormValues> = yup.object({

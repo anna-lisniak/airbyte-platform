@@ -8,7 +8,7 @@ import com.google.common.collect.ImmutableMap;
 import io.airbyte.commons.json.Jsons;
 import io.airbyte.config.ActorDefinitionBreakingChange;
 import io.airbyte.config.ActorType;
-import io.airbyte.config.ApiNotificationConfiguration;
+import io.airbyte.config.SlackNotificationConfiguration;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -41,9 +41,9 @@ public class ApiNotificationClient extends NotificationClient {
   private static final String STATUS = "status";
   private static final String CONNECTION_ID = "connectionId";
 
-  private final ApiNotificationConfiguration config;
+  private final SlackNotificationConfiguration config;
 
-  public ApiNotificationClient(final ApiNotificationConfiguration apiNotificationConfiguration) {
+  public ApiNotificationClient(final SlackNotificationConfiguration apiNotificationConfiguration) {
     this.config = apiNotificationConfiguration;
   }
 
@@ -79,6 +79,7 @@ public class ApiNotificationClient extends NotificationClient {
                                   final String logUrl,
                                   final Long jobId)
       throws IOException, InterruptedException {
+    LOGGER.info("notifyJobSuccess");
     final ImmutableMap<String, String> body = new ImmutableMap.Builder<String, String>()
         .put("connectionName", connectionName)
         .put(SOURCE_CONNECTOR, sourceConnector)
@@ -89,6 +90,7 @@ public class ApiNotificationClient extends NotificationClient {
         .put(STATUS, "success")
         .build();
     final String bodyJSON = Jsons.serialize(body);
+    LOGGER.info("notifyJobSuccess -> bodyJSON: " + bodyJSON);
 
     return notifySuccess(bodyJSON);
   }
@@ -221,17 +223,22 @@ public class ApiNotificationClient extends NotificationClient {
   }
 
   private boolean notify(final String bodyJSON) throws IOException, InterruptedException {
+    LOGGER.info("notify");
     final HttpClient httpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_2)
         .build();
+    LOGGER.info("notify 1");
+
     final HttpRequest request = HttpRequest.newBuilder()
         .POST(HttpRequest.BodyPublishers.ofString(bodyJSON))
         .uri(URI.create(config.getWebhook()))
         .header("Content-Type", "application/json")
         .build();
+    LOGGER.info("notify 2");
+
     final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-    LOGGER.info("statusCode: " + response.statusCode());
-    LOGGER.info("isSuccessfulHttpResponse: " + isSuccessfulHttpResponse(response.statusCode()));
+    LOGGER.info("api statusCode: " + response.statusCode());
+    LOGGER.info("api isSuccessfulHttpResponse: " + isSuccessfulHttpResponse(response.statusCode()));
     if (isSuccessfulHttpResponse(response.statusCode())) {
       LOGGER.info("Successful notification ({}): {}", response.statusCode(), response.body());
       return true;
@@ -243,10 +250,15 @@ public class ApiNotificationClient extends NotificationClient {
 
   @Override
   public boolean notifySuccess(final String bodyJSON) throws IOException, InterruptedException {
+    LOGGER.info("notifySuccess");
     final String webhookUrl = config.getWebhook();
+    LOGGER.info("notifySuccess -> webhookUrl" + webhookUrl);
+    LOGGER.info("Strings.isEmpty(webhookUrl) : " + Strings.isEmpty(webhookUrl));
     if (!Strings.isEmpty(webhookUrl)) {
+      LOGGER.info("notifySuccess -> if");
       return notify(bodyJSON);
     }
+    LOGGER.info("notifySuccess -> end return");
     return false;
   }
 

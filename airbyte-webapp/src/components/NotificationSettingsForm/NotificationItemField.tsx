@@ -1,17 +1,17 @@
-import {useFormContext, useWatch} from "react-hook-form";
-import {FormattedMessage} from "react-intl";
+import { useFormContext, useWatch } from "react-hook-form";
+import { FormattedMessage } from "react-intl";
 
-import {FlexContainer} from "components/ui/Flex";
-import {Switch} from "components/ui/Switch";
-import {Text} from "components/ui/Text";
-import {Tooltip} from "components/ui/Tooltip";
+import { FlexContainer } from "components/ui/Flex";
+import { Switch } from "components/ui/Switch";
+import { Text } from "components/ui/Text";
+import { Tooltip } from "components/ui/Tooltip";
 
-import {FeatureItem, useFeature} from "core/services/features";
+import { FeatureItem, useFeature } from "core/services/features";
 
 import styles from "./NotificationItemField.module.scss";
-import {NotificationSettingsFormValues, NotificationType} from "./NotificationSettingsForm";
-import {SlackNotificationUrlInput} from "./SlackNotificationUrlInput";
-import {TestWebhookButton} from "./TestWebhookButton";
+import { NotificationSettingsFormValues, NotificationType } from "./NotificationSettingsForm";
+import { SlackNotificationUrlInput } from "./SlackNotificationUrlInput";
+import { TestWebhookButton } from "./TestWebhookButton";
 
 interface NotificationItemFieldProps {
   emailNotificationRequired?: boolean;
@@ -83,7 +83,11 @@ export const NotificationItemField: React.FC<NotificationItemFieldProps> = ({
             <Switch onChange={onToggleSlackNotification} checked={field.slack} data-testid={`${name}.slack`} />
           </FlexContainer>
           <FlexContainer justifyContent="center">
-            <Switch onChange={onToggleNotificationType} checked={field.api && field.slack} data-testid={`${name}.api`} />
+            <Switch
+              onChange={onToggleNotificationType}
+              checked={field.api && field.slack}
+              data-testid={`${name}.api`}
+            />
           </FlexContainer>
           <SlackNotificationUrlInput name={`${name}.slackWebhookLink`} disabled={!field.slack} />
           <TestWebhookButton

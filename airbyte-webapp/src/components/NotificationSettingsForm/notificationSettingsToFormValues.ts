@@ -13,6 +13,7 @@ export function notificationSettingsToFormValues(
       api: value?.notificationType?.includes("api") ?? false,
       customerio: value?.notificationType?.includes("customerio") ?? false,
       slackWebhookLink: value?.slackConfiguration?.webhook ?? "",
+      apiWebhookLink: value?.slackConfiguration?.webhook ?? "",
     };
     return acc;
   }, {} as NotificationSettingsFormValues);

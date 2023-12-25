@@ -4283,6 +4283,8 @@ components:
             $ref: "#/components/schemas/NotificationType"
         slackConfiguration:
           $ref: "#/components/schemas/SlackNotificationConfiguration"
+        apiConfiguration:
+          $ref: "#/components/schemas/SlackNotificationConfiguration"
         customerioConfiguration:
           $ref: "#/components/schemas/CustomerioNotificationConfiguration"
 
@@ -4328,6 +4330,13 @@ components:
         customerioConfiguration:
           $ref: "#/components/schemas/CustomerioNotificationConfiguration"
     SlackNotificationConfiguration:
+      type: object
+      required:
+        - webhook
+      properties:
+        webhook:
+          type: string
+    ApiNotificationConfiguration:
       type: object
       required:
         - webhook
@@ -8556,6 +8565,8 @@ components:
         - slackConfiguration
       properties:
         slackConfiguration:
+          $ref: "#/components/schemas/SlackNotificationConfiguration"
+        apiConfiguration:
           $ref: "#/components/schemas/SlackNotificationConfiguration"
         notificationTrigger:
           $ref: "#/components/schemas/NotificationTrigger"
