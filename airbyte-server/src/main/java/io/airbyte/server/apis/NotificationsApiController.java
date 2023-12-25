@@ -46,7 +46,8 @@ public class NotificationsApiController implements NotificationsApi {
   @Override
   public NotificationRead tryNotificationWebhookConfig(@Body final NotificationWebhookConfigValidationRequestBody request) {
     return ApiHelper.execute(() -> {
-      var result = notificationsHandler.tryNotification(request.getSlackConfiguration(), request.getNotificationTrigger());
+      var result = notificationsHandler.tryNotification(request.getSlackConfiguration(), request.getNotificationTrigger(),
+          request.getNotificationType());
       return result;
     });
   }

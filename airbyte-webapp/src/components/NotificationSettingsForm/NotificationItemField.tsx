@@ -9,7 +9,7 @@ import { Tooltip } from "components/ui/Tooltip";
 import { FeatureItem, useFeature } from "core/services/features";
 
 import styles from "./NotificationItemField.module.scss";
-import { NotificationSettingsFormValues } from "./NotificationSettingsForm";
+import { NotificationSettingsFormValues, NotificationType } from "./NotificationSettingsForm";
 import { SlackNotificationUrlInput } from "./SlackNotificationUrlInput";
 import { TestWebhookButton } from "./TestWebhookButton";
 
@@ -25,7 +25,7 @@ export const NotificationItemField: React.FC<NotificationItemFieldProps> = ({
   name,
 }) => {
   const emailNotificationsFeature = useFeature(FeatureItem.EmailNotifications);
-  const atLeastOneNotificationTypeEnableable = emailNotificationsFeature || !slackNotificationUnsupported;
+  const atLeastOneNotificationTypeEnable = emailNotificationsFeature || !slackNotificationUnsupported;
   const { setValue, trigger } = useFormContext<NotificationSettingsFormValues>();
   const field = useWatch<NotificationSettingsFormValues, keyof NotificationSettingsFormValues>({ name });
 
@@ -43,7 +43,11 @@ export const NotificationItemField: React.FC<NotificationItemFieldProps> = ({
     }
   };
 
-  if (!atLeastOneNotificationTypeEnableable) {
+  const onToggleNotificationType = () => {
+    setValue(`${name}.api`, !field.api, { shouldTouch: true, shouldDirty: true });
+  };
+
+  if (!atLeastOneNotificationTypeEnable) {
     return null;
   }
 
@@ -78,11 +82,19 @@ export const NotificationItemField: React.FC<NotificationItemFieldProps> = ({
           <FlexContainer justifyContent="center">
             <Switch onChange={onToggleSlackNotification} checked={field.slack} data-testid={`${name}.slack`} />
           </FlexContainer>
+          <FlexContainer justifyContent="center">
+            <Switch
+              onChange={onToggleNotificationType}
+              checked={field.api && field.slack}
+              data-testid={`${name}.api`}
+            />
+          </FlexContainer>
           <SlackNotificationUrlInput name={`${name}.slackWebhookLink`} disabled={!field.slack} />
           <TestWebhookButton
             disabled={!field.slack}
             webhookUrl={field.slackWebhookLink ?? ""}
             notificationTrigger={name}
+            notificationType={field.api ? NotificationType.API : NotificationType.SLACK}
           />
         </>
       )}

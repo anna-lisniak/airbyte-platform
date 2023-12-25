@@ -4485,6 +4485,8 @@ components:
             $ref: "#/components/schemas/NotificationType"
         slackConfiguration:
           $ref: "#/components/schemas/SlackNotificationConfiguration"
+        apiConfiguration:
+          $ref: "#/components/schemas/SlackNotificationConfiguration"
         customerioConfiguration:
           $ref: "#/components/schemas/CustomerioNotificationConfiguration"
 
@@ -4536,6 +4538,13 @@ components:
       properties:
         webhook:
           type: string
+    ApiNotificationConfiguration:
+      type: object
+      required:
+        - webhook
+      properties:
+        webhook:
+          type: string
     CustomerioNotificationConfiguration:
       type: object
     NotificationType:
@@ -4543,6 +4552,7 @@ components:
       enum:
         - slack
         - customerio
+        - api
         # - webhook
     NotificationTrigger:
       type: string
@@ -8787,8 +8797,18 @@ components:
       properties:
         slackConfiguration:
           $ref: "#/components/schemas/SlackNotificationConfiguration"
+        apiConfiguration:
+          $ref: "#/components/schemas/SlackNotificationConfiguration"
         notificationTrigger:
           $ref: "#/components/schemas/NotificationTrigger"
+        notificationType:
+          $ref: "#/components/schemas/NotificationType"
+    #          type: string
+    #          default: api
+    #          enum:
+    #            - slack
+    #            - customerio
+    #            - api
     RetryStateRead:
       type: object
       required:

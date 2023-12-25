@@ -1,6 +1,6 @@
 import { NotificationItem, NotificationSettings } from "core/api/types/AirbyteClient";
 
-import { NotificationSettingsFormValues, notificationKeys } from "./NotificationSettingsForm";
+import { notificationKeys, NotificationSettingsFormValues } from "./NotificationSettingsForm";
 
 export function notificationSettingsToFormValues(
   notificationSettings?: NotificationSettings
@@ -10,8 +10,10 @@ export function notificationSettingsToFormValues(
   ).reduce((acc, [key, value]) => {
     acc[key] = {
       slack: value?.notificationType?.includes("slack") ?? false,
+      api: value?.notificationType?.includes("api") ?? false,
       customerio: value?.notificationType?.includes("customerio") ?? false,
       slackWebhookLink: value?.slackConfiguration?.webhook ?? "",
+      apiWebhookLink: value?.slackConfiguration?.webhook ?? "",
     };
     return acc;
   }, {} as NotificationSettingsFormValues);
@@ -22,6 +24,7 @@ export function notificationSettingsToFormValues(
         slack: false,
         customerio: false,
         slackWebhookLink: "",
+        api: false,
       };
     }
   });

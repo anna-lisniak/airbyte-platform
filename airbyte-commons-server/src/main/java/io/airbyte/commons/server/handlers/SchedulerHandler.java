@@ -94,6 +94,7 @@ import io.airbyte.metrics.lib.MetricAttribute;
 import io.airbyte.metrics.lib.MetricClientFactory;
 import io.airbyte.metrics.lib.MetricTags;
 import io.airbyte.metrics.lib.OssMetricsRegistry;
+import io.airbyte.notification.ApiNotificationClient;
 import io.airbyte.notification.CustomerioNotificationClient;
 import io.airbyte.notification.SlackNotificationClient;
 import io.airbyte.persistence.job.JobCreator;
@@ -490,6 +491,16 @@ public class SchedulerHandler {
                 source.getName(),
                 result.changeDescription(),
                 email,
+                isBreakingChange);
+          }
+          case API -> {
+            ApiNotificationClient apiNotificationClient = new ApiNotificationClient(item.getSlackConfiguration());
+            apiNotificationClient.notifySchemaPropagated(
+                connectionId,
+                source.getName(),
+                result.changeDescription(),
+                item.getApiConfiguration().getWebhook(),
+                List.of(email),
                 isBreakingChange);
           }
           case CUSTOMERIO -> {

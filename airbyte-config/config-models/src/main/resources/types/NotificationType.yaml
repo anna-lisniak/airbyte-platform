@@ -7,3 +7,4 @@ type: string
 enum:
   - slack
   - customerio
+  - api

@@ -25,6 +25,7 @@ import io.airbyte.config.persistence.ConfigRepository;
 import io.airbyte.metrics.lib.MetricAttribute;
 import io.airbyte.metrics.lib.MetricClientFactory;
 import io.airbyte.metrics.lib.OssMetricsRegistry;
+import io.airbyte.notification.ApiNotificationClient;
 import io.airbyte.notification.CustomerioNotificationClient;
 import io.airbyte.notification.NotificationClient;
 import io.airbyte.notification.SlackNotificationClient;
@@ -91,6 +92,7 @@ public class JobNotifier {
                          final StandardWorkspace workspace) {
     final UUID connectionId = UUID.fromString(job.getScope());
     final NotificationSettings notificationSettings = workspace.getNotificationSettings();
+    LOGGER.info("notificationSettings: " + notificationSettings);
     try {
       final StandardSync standardSync = configRepository.getStandardSync(connectionId);
       final StandardSourceDefinition sourceDefinition = configRepository.getSourceDefinitionFromConnection(connectionId);
@@ -103,16 +105,24 @@ public class JobNotifier {
       final Map<String, Object> sourceMetadata = TrackingMetadata.generateSourceDefinitionMetadata(sourceDefinition, sourceVersion);
       final Map<String, Object> destinationMetadata =
           TrackingMetadata.generateDestinationDefinitionMetadata(destinationDefinition, destinationVersion);
-
+      LOGGER.info("before notificationItem");
       final NotificationItem notificationItem = createAndSend(notificationSettings, action, connectionId,
           destinationDefinition, job, reason, sourceDefinition, standardSync, workspace, workspaceId);
+      LOGGER.info("after notificationItem");
+      LOGGER.info("notificationItem: " + notificationItem);
 
       if (notificationItem != null) {
+        LOGGER.info("before notificationMetadata");
         final Map<String, Object> notificationMetadata = buildNotificationMetadata(connectionId, notificationItem);
+        LOGGER.info("after notificationMetadata");
+        LOGGER.info("notificationMetadata: " + notificationMetadata);
+
         trackingClient.track(
             workspaceId,
             action,
             MoreMaps.merge(jobMetadata, sourceMetadata, destinationMetadata, notificationMetadata));
+        LOGGER.info("end");
+
       }
     } catch (final Exception e) {
       LOGGER.error("Unable to read configuration for notification. Non-blocking. Error:", e);
@@ -120,11 +130,18 @@ public class JobNotifier {
   }
 
   List<NotificationClient> getNotificationClientsFromNotificationItem(final NotificationItem item) {
+    LOGGER.info("getNotificationClientsFromNotificationItem");
+    // LOGGER.info("item.getNotificationType(): " + item.getNotificationType());
+
     return item.getNotificationType().stream().map(notificationType -> {
+      LOGGER.info("item.getNotificationType(): " + notificationType);
+
       if (NotificationType.SLACK.equals(notificationType)) {
         return new SlackNotificationClient(item.getSlackConfiguration());
       } else if (NotificationType.CUSTOMERIO.equals(notificationType)) {
         return new CustomerioNotificationClient();
+      } else if (NotificationType.API.equals(notificationType)) {
+        return new ApiNotificationClient(item.getSlackConfiguration());
       } else {
         throw new IllegalArgumentException("Notification type not supported: " + notificationType);
       }
@@ -134,17 +151,38 @@ public class JobNotifier {
   Map<String, Object> buildNotificationMetadata(final UUID connectionId, final NotificationItem notificationItem) {
     final Builder<String, Object> notificationMetadata = ImmutableMap.builder();
     notificationMetadata.put("connection_id", connectionId);
-    for (final var notificationType : notificationItem.getNotificationType()) {
-      if (NotificationType.SLACK.equals(notificationType)
-          && notificationItem.getSlackConfiguration().getWebhook().contains("hooks.slack.com")) {
-        // flag as slack if the webhook URL is also pointing to slack
-        notificationMetadata.put("notification_type", NotificationType.SLACK);
-      } else if (NotificationType.CUSTOMERIO.equals(notificationType)) {
-        notificationMetadata.put("notification_type", NotificationType.CUSTOMERIO);
-      } else {
-        // Slack Notification type could be "hacked" and re-used for custom webhooks
-        notificationMetadata.put("notification_type", "N/A");
-      }
+    // for (final var notificationType : notificationItem.getNotificationType()) {
+    // LOGGER.info("buildNotificationMetadata -> notificationType: " + notificationType);
+    // final String notificationTypeStr = "notification_type";
+    // if (NotificationType.API.equals(notificationType)) {
+    // notificationMetadata.put(notificationTypeStr, NotificationType.API);
+    // } else if (NotificationType.SLACK.equals(notificationType)
+    // && notificationItem.getSlackConfiguration().getWebhook().contains("hooks.slack.com")) {
+    // // flag as slack if the webhook URL is also pointing to slack
+    // notificationMetadata.put(notificationTypeStr, NotificationType.SLACK);
+    // } else if (NotificationType.CUSTOMERIO.equals(notificationType)) {
+    // notificationMetadata.put(notificationTypeStr, NotificationType.CUSTOMERIO);
+    // } else {
+    // // Slack Notification type could be "hacked" and re-used for custom webhooks
+    // notificationMetadata.put(notificationTypeStr, "N/A");
+    // }
+    // break;
+    // }
+
+    final String notificationTypeStr = "notification_type";
+
+    final List<NotificationType> types = notificationItem.getNotificationType();
+
+    if (types.contains(NotificationType.API)) {
+      notificationMetadata.put(notificationTypeStr, NotificationType.API);
+    } else if (types.contains(NotificationType.SLACK) && notificationItem.getSlackConfiguration().getWebhook().contains("hooks.slack.com")) {
+      // flag as slack if the webhook URL is also pointing to slack
+      notificationMetadata.put(notificationTypeStr, NotificationType.SLACK);
+    } else if (types.contains(NotificationType.CUSTOMERIO)) {
+      notificationMetadata.put(notificationTypeStr, NotificationType.CUSTOMERIO);
+    } else {
+      // Slack Notification type could be "hacked" and re-used for custom webhooks
+      notificationMetadata.put(notificationTypeStr, "N/A");
     }
     return notificationMetadata.build();
   }
@@ -214,6 +252,7 @@ public class JobNotifier {
   private void sendNotification(final NotificationItem notificationItem,
                                 final String notificationTrigger,
                                 final ThrowingFunction<NotificationClient, Boolean, Exception> executeNotification) {
+    LOGGER.info("sendNotification -> notificationItem" + notificationItem);
     if (notificationItem == null) {
       // Note: we may be able to implement a log notifier to log notification message only.
       LOGGER.info("No notification item found for the desired notification event found. Skipping notification.");
@@ -222,10 +261,15 @@ public class JobNotifier {
     final List<NotificationClient> notificationClients = getNotificationClientsFromNotificationItem(notificationItem);
     for (final NotificationClient notificationClient : notificationClients) {
       try {
+        LOGGER.info("sendNotification -> try");
         if (!executeNotification.apply(notificationClient)) {
+          LOGGER.info("sendNotification -> try -> if");
           LOGGER.warn("Failed to successfully notify: {}", notificationItem);
         }
+        LOGGER.info("sendNotification -> before submitToMetricClient");
         submitToMetricClient(notificationTrigger, notificationClient.getNotificationClientType());
+        LOGGER.info("sendNotification -> after submitToMetricClient");
+
       } catch (final Exception ex) {
         LOGGER.error("Failed to notify: {} due to an exception. Not blocking.", notificationItem, ex);
         // Do not block.

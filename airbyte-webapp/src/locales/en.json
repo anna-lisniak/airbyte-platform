@@ -800,6 +800,7 @@
   "settings.notifications.email": "Email",
   "settings.notifications.webhook": "Webhook",
   "settings.notifications.webhookUrl": "Webhook URL",
+  "settings.notifications.slackOrRegularApi": "Slack/Regular API",
   "settings.notifications": "Notifications",
   "settings.notificationGuide.button": "Need help with Webhook URL?",
   "settings.notificationGuide.title": "How to get notification the way you want with your webhook URL?",

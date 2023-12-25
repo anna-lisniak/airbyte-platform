@@ -7,6 +7,7 @@ const mockNotificationItemFieldValue: NotificationItemFieldValue = {
   slack: false,
   customerio: false,
   slackWebhookLink: "",
+  api: false,
 };
 
 const mockNotificationItem: NotificationItem = {
@@ -61,7 +62,12 @@ describe("formValuesToNotificationSettings", () => {
     const formValues: NotificationSettingsFormValues = {
       ...mockEmptyFormValues,
       sendOnFailure: { ...mockNotificationItemFieldValue, slack: true, slackWebhookLink: "www.airbyte.com" },
-      sendOnSuccess: { customerio: true, slack: true, slackWebhookLink: "www.airbyte.io" },
+      sendOnSuccess: {
+        customerio: true,
+        slack: true,
+        slackWebhookLink: "www.airbyte.io",
+        api: true,
+      },
     };
 
     const expectedNotificationSEttings: NotificationSettings = {

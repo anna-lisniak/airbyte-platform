@@ -7,6 +7,7 @@ const mockNotificationItemFieldValue: NotificationItemFieldValue = {
   slack: false,
   customerio: false,
   slackWebhookLink: "",
+  api: false,
 };
 
 const mockNotificationItem: NotificationItem = {

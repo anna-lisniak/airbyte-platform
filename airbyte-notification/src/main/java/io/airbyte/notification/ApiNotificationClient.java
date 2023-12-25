@@ -5,7 +5,6 @@
 package io.airbyte.notification;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableMap.Builder;
 import io.airbyte.commons.json.Jsons;
 import io.airbyte.config.ActorDefinitionBreakingChange;
 import io.airbyte.config.ActorType;
@@ -22,7 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Notification client that uses Slack API for Incoming Webhook to send messages.
+ * TODO: redact description Notification client that uses Slack API for Incoming Webhook to send
+ * messages.
  *
  * This class also reads a resource YAML file that defines the template message to send.
  *
@@ -31,15 +31,20 @@ import org.slf4j.LoggerFactory;
  *
  * For example, slack API expects some text message in the { "text" : "Hello World" } field...
  */
-public class SlackNotificationClient extends NotificationClient {
+public class ApiNotificationClient extends NotificationClient {
 
-  private static final Logger LOGGER = LoggerFactory.getLogger(SlackNotificationClient.class);
-  private static final String SLACK_CLIENT = "slack";
+  private static final Logger LOGGER = LoggerFactory.getLogger(ApiNotificationClient.class);
+  private static final String CLIENT_TYPE = "api";
+  private static final String SOURCE_CONNECTOR = "sourceConnector";
+  private static final String DESTINATION_CONNECTOR = "destinationConnector";
+  private static final String JOB_DESCRIPTION = "jobDescription";
+  private static final String STATUS = "status";
+  private static final String CONNECTION_ID = "connectionId";
 
   private final SlackNotificationConfiguration config;
 
-  public SlackNotificationClient(final SlackNotificationConfiguration slackNotificationConfiguration) {
-    this.config = slackNotificationConfiguration;
+  public ApiNotificationClient(final SlackNotificationConfiguration apiNotificationConfiguration) {
+    this.config = apiNotificationConfiguration;
   }
 
   @Override
@@ -51,14 +56,18 @@ public class SlackNotificationClient extends NotificationClient {
                                   final String logUrl,
                                   final Long jobId)
       throws IOException, InterruptedException {
-    return notifyFailure(renderTemplate(
-        "slack/failure_slack_notification_template.txt",
-        connectionName,
-        sourceConnector,
-        destinationConnector,
-        jobDescription,
-        logUrl,
-        String.valueOf(jobId)));
+    final ImmutableMap<String, String> body = new ImmutableMap.Builder<String, String>()
+        .put("connectionName", connectionName)
+        .put(SOURCE_CONNECTOR, sourceConnector)
+        .put(DESTINATION_CONNECTOR, destinationConnector)
+        .put(JOB_DESCRIPTION, jobDescription)
+        .put("logUrl", logUrl)
+        .put("jobId", String.valueOf(jobId))
+        .put(STATUS, "failed")
+        .build();
+    final String bodyJSON = Jsons.serialize(body);
+
+    return notifyFailure(bodyJSON);
   }
 
   @Override
@@ -70,14 +79,20 @@ public class SlackNotificationClient extends NotificationClient {
                                   final String logUrl,
                                   final Long jobId)
       throws IOException, InterruptedException {
-    return notifySuccess(renderTemplate(
-        "slack/success_slack_notification_template.txt",
-        connectionName,
-        sourceConnector,
-        destinationConnector,
-        jobDescription,
-        logUrl,
-        String.valueOf(jobId)));
+    LOGGER.info("notifyJobSuccess");
+    final ImmutableMap<String, String> body = new ImmutableMap.Builder<String, String>()
+        .put("connectionName", connectionName)
+        .put(SOURCE_CONNECTOR, sourceConnector)
+        .put(DESTINATION_CONNECTOR, destinationConnector)
+        .put(JOB_DESCRIPTION, jobDescription)
+        .put("logUrl", logUrl)
+        .put("jobId", String.valueOf(jobId))
+        .put(STATUS, "success")
+        .build();
+    final String bodyJSON = Jsons.serialize(body);
+    LOGGER.info("notifyJobSuccess -> bodyJSON: " + bodyJSON);
+
+    return notifySuccess(bodyJSON);
   }
 
   @Override
@@ -88,17 +103,23 @@ public class SlackNotificationClient extends NotificationClient {
                                           final UUID workspaceId,
                                           final UUID connectionId)
       throws IOException, InterruptedException {
-    final String message = renderTemplate(
-        "slack/auto_disable_slack_notification_template.txt",
-        sourceConnector,
-        destinationConnector,
-        jobDescription,
-        workspaceId.toString(),
-        connectionId.toString());
+    final ImmutableMap<String, String> body = new ImmutableMap.Builder<String, String>()
+        // .put("connectionName", connectionName)
+        .put("receiverEmail", receiverEmail)
+        .put(SOURCE_CONNECTOR, sourceConnector)
+        .put(DESTINATION_CONNECTOR, destinationConnector)
+        .put(JOB_DESCRIPTION, jobDescription)
+        // .put("logUrl", logUrl)
+        .put("workspaceId", String.valueOf(workspaceId))
+        .put(CONNECTION_ID, String.valueOf(connectionId))
+        // .put("jobId", String.valueOf(jobId))
+        .put(STATUS, "disabled")
+        .build();
+    final String bodyJSON = Jsons.serialize(body);
 
     final String webhookUrl = config.getWebhook();
     if (!Strings.isEmpty(webhookUrl)) {
-      return notify(message);
+      return notify(bodyJSON);
     }
     return false;
   }
@@ -111,17 +132,23 @@ public class SlackNotificationClient extends NotificationClient {
                                                 final UUID workspaceId,
                                                 final UUID connectionId)
       throws IOException, InterruptedException {
-    final String message = renderTemplate(
-        "slack/auto_disable_warning_slack_notification_template.txt",
-        sourceConnector,
-        destinationConnector,
-        jobDescription,
-        workspaceId.toString(),
-        connectionId.toString());
+    final ImmutableMap<String, String> body = new ImmutableMap.Builder<String, String>()
+        // .put("connectionName", connectionName)
+        .put("receiverEmail", receiverEmail)
+        .put(SOURCE_CONNECTOR, sourceConnector)
+        .put(DESTINATION_CONNECTOR, destinationConnector)
+        .put(JOB_DESCRIPTION, jobDescription)
+        // .put("logUrl", logUrl)
+        .put("workspaceId", workspaceId.toString())
+        .put(CONNECTION_ID, connectionId.toString())
+        // .put("jobId", String.valueOf(jobId))
+        .put(STATUS, "disable_warning")
+        .build();
+    final String bodyJSON = Jsons.serialize(body);
 
     final String webhookUrl = config.getWebhook();
     if (!Strings.isEmpty(webhookUrl)) {
-      return notify(message);
+      return notify(bodyJSON);
     }
     return false;
   }
@@ -132,6 +159,7 @@ public class SlackNotificationClient extends NotificationClient {
                                              final ActorType actorType,
                                              final ActorDefinitionBreakingChange breakingChange)
       throws IOException, InterruptedException {
+    // TODO for api
     // Unsupported for now since we can't reliably send bulk Slack notifications
     throw new UnsupportedOperationException("Slack notification is not supported for breaking change warning");
   }
@@ -142,53 +170,75 @@ public class SlackNotificationClient extends NotificationClient {
                                                    final ActorType actorType,
                                                    final ActorDefinitionBreakingChange breakingChange)
       throws IOException, InterruptedException {
+    // TODO for api
     // Unsupported for now since we can't reliably send bulk Slack notifications
     throw new UnsupportedOperationException("Slack notification is not supported for breaking change syncs disabled notification");
   }
 
   @Override
-  public boolean notifySchemaPropagated(final UUID workspaceId,
-                                        final String workspaceName,
-                                        final UUID connectionId,
-                                        final String connectionName,
-                                        final String connectionUrl,
-                                        final UUID sourceId,
-                                        final String sourceName,
-                                        final List<String> changes,
-                                        final String recipient,
-                                        boolean isBreaking)
+  public boolean notifySchemaChange(final UUID connectionId, final boolean isBreaking, final String url)
       throws IOException, InterruptedException {
-    final StringBuilder summary = new StringBuilder();
-    for (String change : changes) {
-      summary.append(" * ");
-      summary.append(change);
-      summary.append("\n");
-    }
-    final String message =
-        isBreaking ? renderTemplate("slack/breaking_schema_change_slack_notification_template.txt", connectionId.toString(), connectionUrl)
-            : renderTemplate("slack/schema_propagation_slack_notification_template.txt", connectionName, summary.toString(), connectionUrl);
+    final ImmutableMap<String, String> body = new ImmutableMap.Builder<String, String>()
+        .put(CONNECTION_ID, connectionId.toString())
+        .put("isBreaking", String.valueOf(isBreaking))
+        .put("url", url)
+        .put(STATUS, "schema_change")
+        .build();
+    final String bodyJSON = Jsons.serialize(body);
+
     final String webhookUrl = config.getWebhook();
+
     if (!Strings.isEmpty(webhookUrl)) {
-      return notify(message);
+      return notify(bodyJSON);
     }
     return false;
   }
 
-  private boolean notify(final String message) throws IOException, InterruptedException {
+  @Override
+  public boolean notifySchemaPropagated(final UUID connectionId,
+                                        final String sourceName,
+                                        final List<String> changes,
+                                        final String url,
+                                        final List<String> recipients,
+                                        boolean isBreaking)
+      throws IOException, InterruptedException {
+    final String summary = String.join(",", changes);
+
+    final ImmutableMap<String, String> body = new ImmutableMap.Builder<String, String>()
+        .put(CONNECTION_ID, connectionId.toString())
+        .put("isBreaking", String.valueOf(isBreaking))
+        .put("sourceName", sourceName)
+        .put("summary", summary)
+        .put("url", url)
+        .put("recipients", String.join(",", recipients))
+        .put(STATUS, "schema_propagation")
+        .build();
+    final String bodyJSON = Jsons.serialize(body);
+
+    final String webhookUrl = config.getWebhook();
+    if (!Strings.isEmpty(webhookUrl)) {
+      return notify(bodyJSON);
+    }
+    return false;
+  }
+
+  private boolean notify(final String bodyJSON) throws IOException, InterruptedException {
+    LOGGER.info("notify");
     final HttpClient httpClient = HttpClient.newBuilder()
         .version(HttpClient.Version.HTTP_2)
         .build();
-    final ImmutableMap<String, String> body = new Builder<String, String>()
-        .put("text", message)
-        .build();
+    LOGGER.info("notify 1");
+
     final HttpRequest request = HttpRequest.newBuilder()
-        .POST(HttpRequest.BodyPublishers.ofString(Jsons.serialize(body)))
+        .POST(HttpRequest.BodyPublishers.ofString(bodyJSON))
         .uri(URI.create(config.getWebhook()))
         .header("Content-Type", "application/json")
         .build();
+    LOGGER.info("notify 2");
+
     final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-    LOGGER.info("statusCode: " + response.statusCode());
-    LOGGER.info("isSuccessfulHttpResponse: " + isSuccessfulHttpResponse(response.statusCode()));
+    LOGGER.info("api statusCode: " + response.statusCode());
+    LOGGER.info("api isSuccessfulHttpResponse: " + isSuccessfulHttpResponse(response.statusCode()));
     if (isSuccessfulHttpResponse(response.statusCode())) {
       LOGGER.info("Successful notification ({}): {}", response.statusCode(), response.body());
       return true;
@@ -199,37 +249,50 @@ public class SlackNotificationClient extends NotificationClient {
   }
 
   @Override
-  public boolean notifySuccess(final String message) throws IOException, InterruptedException {
+  public boolean notifySuccess(final String bodyJSON) throws IOException, InterruptedException {
+    LOGGER.info("notifySuccess");
     final String webhookUrl = config.getWebhook();
+    LOGGER.info("notifySuccess -> webhookUrl" + webhookUrl);
+    LOGGER.info("Strings.isEmpty(webhookUrl) : " + Strings.isEmpty(webhookUrl));
     if (!Strings.isEmpty(webhookUrl)) {
-      return notify(message);
+      LOGGER.info("notifySuccess -> if");
+      return notify(bodyJSON);
     }
+    LOGGER.info("notifySuccess -> end return");
     return false;
   }
 
   @Override
-  public boolean notifyFailure(final String message) throws IOException, InterruptedException {
+  public boolean notifyFailure(final String bodyJSON) throws IOException, InterruptedException {
     final String webhookUrl = config.getWebhook();
     if (!Strings.isEmpty(webhookUrl)) {
-      return notify(message);
+      return notify(bodyJSON);
     }
     return false;
   }
 
   @Override
   public String getNotificationClientType() {
-    return SLACK_CLIENT;
+    return CLIENT_TYPE;
   }
 
   /**
    * Used when user tries to test the notification webhook settings on UI.
    */
   @Override
-  public boolean notifyTest(final String message) throws IOException, InterruptedException {
+  public boolean notifyTest(String message) throws IOException, InterruptedException {
     final String webhookUrl = config.getWebhook();
     LOGGER.info("webhookUrl: " + webhookUrl);
+    LOGGER.info("its from api !!!!!!!");
+
+    final ImmutableMap<String, String> body = new ImmutableMap.Builder<String, String>()
+        .put("webhookUrl", webhookUrl)
+        .put("status", "test")
+        .build();
+    final String bodyJSON = Jsons.serialize(body);
+
     if (!Strings.isEmpty(webhookUrl)) {
-      return notify(message);
+      return notify(bodyJSON);
     }
     return false;
   }
